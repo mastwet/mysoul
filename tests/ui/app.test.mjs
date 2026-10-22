@@ -43,6 +43,11 @@ async function fixture(chat,modelRequest,{tokenless=false}={}) {
       if(body.expected_version!==server.persona.version)return {ok:false,status:409,json:async()=>({detail:"stale"})};
       server.persona={version:body.expected_version+1,public:body.public,sections:body.sections};server.personaHistory.push({version:server.persona.version,public:body.public});result=server.persona;
     }else if(path==="/api/persona/history"){historyReads.push(path);result=server.personaHistory;
+    }else if(path==="/api/persona/changes")result=[{id:"change",actor:"automatic",status:"applied",base_version:0,version:1,changes:[{target:"relationship",old:"old relationship",new:"new relationship",reason:"evidence",evidence_refs:["source"]}]}];
+    else if(path==="/api/cognition/run"||path==="/api/cognition/policy"||path==="/api/persona/rollback"){
+      const body=JSON.parse(options.body);writes.push({path,body});
+      if(path==="/api/cognition/policy")server.cognition.policy={...body,version:body.expected_version+1};
+      result=path==="/api/cognition/run"?{status:"queued",run_id:"run1"}:server.cognition?.policy||{};
     }else if(path==="/api/life"){
       const body=JSON.parse(options.body);writes.push({path,body});
       server.state={...server.state,...body,next_initiative_at:body.autonomy_enabled?"2026-10-22T12:00:00Z":null};result=server.state;
@@ -180,7 +185,7 @@ test("persona editor exposes eight versioned sections and a public projection",a
     const d=ui.document;
     d.querySelector('[data-view="persona"]').click();
     d.getElementById("edit-persona").click();
-    assert.equal(d.querySelectorAll("#persona-fields textarea").length,9);
+    assert.equal(d.querySelectorAll("#persona-fields textarea").length,10);
     d.getElementById("persona-identity").value="A clearer identity";
     d.getElementById("persona-public").value="Public companion";
     d.getElementById("persona-form").dispatchEvent(new ui.window.Event("submit",{bubbles:true,cancelable:true}));
@@ -376,4 +381,41 @@ test("tokenless local test opens directly and unlimited calls do not pause initi
     await until(()=>!ui.textarea.disabled);
     assert.equal(ui.sends.length,1);
   }finally{ui.close();}
+});
+
+test("memory shows durable failure and manual retry; persona shows automatic change and rollback",async()=>{
+  const ui=await fixture();
+  try {
+    const d=ui.document;
+    ui.server.cognition={policy:{version:0,enabled:true,persona_enabled:true,interval_minutes:3},pending:1,covered:0,sources:[{id:"source",event_id:"event",role:"user",covered:0,total:12}],runs:[{id:"run1",status:"failed",stage:"reflect",error:"TimeoutError",created_at:"2026-10-22T12:00:00Z",receipts:["collect","prepare","reconcile"]}]};
+    d.querySelector('[data-view="memory"]').click();
+    await until(()=>d.getElementById("cognition-status")?.textContent.includes("1"));
+    assert.match(d.getElementById("cognition-runs").textContent,/失败/);
+    assert.match(d.getElementById("cognition-runs").textContent,/TimeoutError/);
+    d.getElementById("organize-now").click();
+    await until(()=>ui.writes.some(w=>w.path==="/api/cognition/run"));
+    ui.server.persona.version=1;
+    d.querySelector('[data-view="persona"]').click();
+    await until(()=>d.getElementById("persona-changes").textContent.includes("new relationship"));
+    assert.match(d.getElementById("persona-changes").textContent,/old relationship/);
+    assert.match(d.getElementById("persona-auto-status").textContent,/自动生效/);
+    const rollback=[...d.querySelectorAll('#persona-history button')].find(b=>b.textContent.includes("恢复"));
+    assert.ok(rollback);rollback.click();
+    await until(()=>ui.writes.some(w=>w.path==="/api/persona/rollback")&&!d.querySelector('[aria-busy="true"]'));
+  } finally {ui.close();}
+});
+
+test("persona automatic toggle persists without discarding editor draft",async()=>{
+  const ui=await fixture();
+  try {
+    const d=ui.document;
+    ui.server.cognition={policy:{version:0,enabled:true,persona_enabled:true,interval_minutes:3},pending:0,covered:0,sources:[],runs:[]};
+    d.querySelector('[data-view="persona"]').click();
+    await until(()=>d.getElementById("persona-auto-status").textContent.includes("自动生效"));
+    d.getElementById("edit-persona").click();d.getElementById("persona-identity").value="unsaved draft";
+    d.getElementById("persona-auto-toggle").click();
+    await until(()=>ui.writes.some(w=>w.path==="/api/cognition/policy")&&!d.querySelector('[aria-busy="true"]'));
+    assert.equal(ui.writes.at(-1).body.persona_enabled,false);
+    assert.equal(d.getElementById("persona-identity").value,"unsaved draft");
+  } finally {ui.close();}
 });

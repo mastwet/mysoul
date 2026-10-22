@@ -76,6 +76,18 @@
 
       <main id="memory" class="view page-scroll" hidden><div class="page-content">
         <div class="page-heading"><div><h1>记忆</h1><p>整理此刻重要的事，也保留它们的来处。</p></div></div>
+        <section class="surface">
+          <div class="section-heading"><h2>自动整理</h2><button id="organize-now" class="primary small" type="button">整理 / 重试</button></div>
+          <p id="cognition-status" class="muted" role="status">读取整理状态…</p>
+          <form id="cognition-policy-form" class="maintenance-controls">
+            <label class="check-row"><input id="cognition-enabled" type="checkbox">自动整理经历</label>
+            <label>最短间隔（分钟）<input id="cognition-interval" type="number" min="3" max="1440" required></label>
+            <button type="submit" class="secondary small">保存节奏</button>
+          </form>
+          <p class="field-note">没有新经历时不调用模型。主人对话和工作优先，失败后会延迟重试。</p>
+          <div id="cognition-runs"></div>
+        </section>
+        <details class="surface disclosure"><summary>整理来源与覆盖进度</summary><div id="cognition-sources"></div></details>
         <section class="surface"><div class="section-heading"><h2>当前摘要 <span class="badge" id="recap-version"></span></h2><div id="recap-actions" class="actions"><button id="edit-recap" class="secondary small" type="button"><span data-icon="edit"></span>编辑</button><button id="clear-recap" class="ghost small" type="button">清空摘要</button></div></div><p id="recap-view" class="prose"></p><form id="recap-form" hidden><label for="recap-text">完整摘要</label><textarea id="recap-text" rows="10" maxlength="64000"></textarea><p class="field-note">保存为新版本；发生冲突时保留你的编辑。</p><div class="form-actions"><button id="cancel-recap" class="secondary" type="button">取消</button><button class="primary" type="submit">保存版本</button></div></form><p class="field-note">清空摘要会保留原始证据与历史版本。</p></section>
         <details class="surface disclosure"><summary>摘要版本记录</summary><div id="recap-history"></div></details>
         <section class="surface"><div class="section-heading"><h2>记忆检索</h2><span id="memory-backend" class="badge"></span></div><p id="memory-status" class="field-note"></p><form id="memory-search-form" class="goal-form"><label class="sr-only" for="memory-query">搜索记忆</label><input id="memory-query" type="search" maxlength="1000" placeholder="搜索旧对话或记录中的关键词" required><div class="form-actions"><button class="primary" type="submit">搜索</button></div></form><div id="memory-search-results"></div></section>
@@ -84,7 +96,13 @@
 
       <main id="persona" class="view page-scroll" hidden><div class="page-content">
         <div class="page-heading"><div><h1>人格</h1><p>塑造 mysoul 的身份、关系、原则与成长方向。</p></div></div>
-        <section class="surface"><h2>人格系统</h2><p class="muted">人格分为八个部分，按版本保留。公开人格投影会用于群聊；其余部分只进入主人对话。技能提案不能改写人格。</p><p id="persona-view" class="prose"></p><p id="persona-version" class="field-note"></p><button id="edit-persona" class="secondary" type="button">编辑人格配置</button><form id="persona-form" hidden><div id="persona-fields"></div><div class="form-actions"><button id="cancel-persona" class="secondary" type="button">取消</button><button class="primary" type="submit">保存新版本</button></div></form></section>
+        <section class="surface">
+          <div class="section-heading"><h2>人格演化</h2><button id="persona-auto-toggle" class="secondary small" type="button">读取状态…</button></div>
+          <p id="persona-auto-status" class="muted" role="status"></p>
+          <p class="field-note">身份、关系、私密内在、世界认识和推测性观察可自动变化。红线、使命、梦想、公开投影及你手写的资料保留手动控制。</p>
+          <div id="persona-changes"></div>
+        </section>
+        <section class="surface"><h2>人格系统</h2><p class="muted">人格按版本保留。群聊只使用公开投影；WORLD 仅在这里查看，不自动注入模型。技能提案不能改写人格。</p><p id="persona-view" class="prose"></p><p id="persona-version" class="field-note"></p><details class="disclosure"><summary>查看各部分与推测性观察</summary><div id="persona-sections"></div></details><button id="edit-persona" class="secondary" type="button">编辑人格配置</button><form id="persona-form" hidden><div id="persona-fields"></div><div class="form-actions"><button id="cancel-persona" class="secondary" type="button">取消</button><button class="primary" type="submit">保存新版本</button></div></form></section>
         <details class="surface disclosure"><summary>人格版本记录</summary><div id="persona-history"></div></details>
       </div></main>
 

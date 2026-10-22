@@ -63,6 +63,7 @@ if(fragment.has("token")){token=fragment.get("token");history.replaceState(null,
 let csrf="", snapshot=null, skillData=null, recapBase=null, activeView="chat";
 let refreshPromise=null, pendingChat=null, chatSignature="", lifeDirty=false, loadedChat=false;
 let modelDirty=false, modelVersion=0, personaEditVersion=0;
+let cognitionDirty=false,cognitionEditVersion=0;
 const busyScopes=new Set(), signatures=new WeakMap();
 
 function notice(text) {
@@ -168,7 +169,6 @@ function setView(view) {
   $("page-title").textContent=title;document.title=`mysoul · ${view==="chat"?"对话":title}`;
   if(mobile.matches){mobileSidebar=false;syncSidebar();}
   if(view==="chat")requestAnimationFrame(()=>$("chat-text").focus());
-  if(view==="persona")loadPersonaHistory();
   refresh();
 }
 document.querySelectorAll("[data-view]").forEach(el=>el.addEventListener("click",()=>setView(el.dataset.view)));
@@ -222,6 +222,8 @@ async function refresh() {
       if(requestedView==="memory"){
         const [evidence,history,personaHistory]=await Promise.all([api("evidence"),api("recap/history"),api("persona/history")]);
         if(activeView===requestedView){renderEvidence(evidence);renderHistory(history);renderPersonaHistory(personaHistory);renderMemoryStatus();}
+      }else if(requestedView==="persona"){
+        await loadPersonaHistory();
       }else if(requestedView==="skills"){
         const [skills,evidence]=await Promise.all([api("skills"),api("evidence")]);
         if(activeView===requestedView){skillData=skills;renderSkills(skills);renderEvidenceOptions(evidence);}
@@ -265,8 +267,10 @@ function renderSnapshot(force=false) {
   const initiativeOutcome={waiting:state.autonomy_last_checked_at?"正在检查":"等待首次检查",silent:"上次保持安静",message:"最近已主动发起",error:"上次检查失败",interrupted:"主人输入打断了检查",paused:"设置变化后已停止"}[state.autonomy_last_result]||"等待检查";
   let initiativePauseReason=state.mode!=="normal"?modeNames[state.mode]+"模式":state.fatigue>=.9?"疲劳过高":limits.model_calls!==null&&limits.model_calls!==undefined&&state.model_calls>=limits.model_calls?"调用预算已用尽":limits.tokens!==null&&limits.tokens!==undefined&&state.tokens_used>=limits.tokens?"Token预算已用尽":"";
   $("initiative-status").textContent=!state.autonomy_enabled?"自主发起已暂停 · "+initiativeOutcome:initiativePauseReason?"自主发起暂停 · "+initiativePauseReason+" · "+initiativeOutcome:"自主发起已开启 · 每 "+initiativeCadence+" · "+initiativeOutcome;
+  renderCognition();
+  renderPersonaSections();
   $("persona-view").textContent=snapshot.persona.public;
-  $("persona-version").textContent=`当前版本 v${snapshot.persona.version} · 私密部分只加入主人上下文`;
+  $("persona-version").textContent=`当前版本 v${snapshot.persona.version} · 新版本用于后续对话，活动中的任务保留原版本`;
   $("recap-version").textContent=`v${snapshot.recap.version}`;
   $("recap-view").textContent=snapshot.recap.text||"还没有摘要。新的经验会在整理后出现在这里。";
   const activeTasks=snapshot.goals.filter(g=>["pending","active","suspended"].includes(g.status)).length;
@@ -345,14 +349,90 @@ function renderHistory(history) {
   keyedList($("recap-history"),history.map(v=>({...v,key:v.version})),v=>{const row=node("div",undefined,"history-row");row.append(node("strong",`v${v.version} · ${new Date(v.created_at).toLocaleString()}`),node("p",v.text.slice(0,160)||"空摘要"));return row;},"还没有历史版本。");
 }
 function renderPersonaHistory(history) {
-  keyedList($("persona-history"),history.map(v=>({...v,key:v.version})),v=>{
-    const row=node("div",undefined,"history-row");row.append(node("strong",`人格 v${v.version}`),node("p",v.public));return row;
+  keyedList($("persona-history"),history.map(v=>({...v,key:v.version,headVersion:snapshot.persona.version})),v=>{
+    const row=node("div",undefined,"history-row");row.append(node("strong",`人格 v${v.version}`),node("p",v.public));
+    if(v.version!==v.headVersion)row.append(actionButton(`恢复到 v${v.version}`,async()=>{
+      await api("persona/rollback",{expected_version:v.headVersion,target_version:v.version});
+      await refresh();await loadPersonaHistory();
+    }));return row;
   },"还没有历史版本。");
 }
 async function loadPersonaHistory() {
-  try{renderPersonaHistory(await api("persona/history"));}
+  try{const [history,changes]=await Promise.all([api("persona/history"),api("persona/changes")]);renderPersonaHistory(history);renderPersonaChanges(changes);}
   catch(error){notice(error.message);}
 }
+const cognitiveStageNames={collect:"收集",prepare:"准备",reconcile:"整理记忆",reflect:"反思人格",effects:"发布变化",finish:"结束"};
+const cognitiveStatusNames={queued:"排队中",running:"处理中",completed:"已完成",failed:"失败",superseded:"已因新输入或编辑中止"};
+function sourceDetail(ref) {
+  const details=node("details",undefined,"source-detail"),summary=node("summary",`查看证据 · ${ref}`),body=node("p","","prose");
+  details.append(summary,body);
+  details.addEventListener("toggle",async()=>{
+    if(!details.open||details.dataset.loaded)return;
+    body.textContent="读取完整来源…";
+    try{const evidence=await api(`evidence/${encodeURIComponent(ref)}`);body.textContent=evidence.text;details.dataset.loaded="true";}
+    catch(error){body.textContent=error.message;}
+  });
+  return details;
+}
+function renderCognition() {
+  const data=snapshot.cognition;
+  if(!data){$("cognition-status").textContent="整理状态暂不可用";return;}
+  const policy=data.policy;
+  $("cognition-status").textContent=`${policy.enabled?"自动整理已开启":"自动整理已暂停"} · ${data.pending} 段待整理 · ${data.covered} 段已覆盖`;
+  if(!cognitionDirty&&!busyScopes.has($("cognition-policy-form"))){
+    $("cognition-enabled").checked=policy.enabled;$("cognition-interval").value=policy.interval_minutes;cognitionEditVersion=policy.version;
+  }
+  $("persona-auto-status").textContent=policy.persona_enabled?`人格变化自动生效 · ${policy.enabled?"随经历整理进行":"记忆整理已暂停"}`:"人格自动演化已暂停 · 手动编辑仍可用";
+  $("persona-auto-toggle").textContent=policy.persona_enabled?"暂停自动演化":"开启自动演化";
+  $("persona-auto-toggle").setAttribute("aria-pressed",String(policy.persona_enabled));
+  keyedList($("cognition-runs"),data.runs.slice(-8).reverse().map(r=>({...r,key:r.id})),r=>{
+    const row=node("details",undefined,"maintenance-run"),head=node("summary");
+    head.append(node("strong",cognitiveStatusNames[r.status]||r.status),node("span",` · ${cognitiveStageNames[r.stage]||r.stage} · ${new Date(r.created_at).toLocaleString()}`,"muted"));row.append(head);
+    row.append(node("p",(r.receipts||[]).map(stage=>cognitiveStageNames[stage]||stage).join(" → "),"field-note"));
+    if(r.error)row.append(node("p",r.error,"run-error"));
+    if(r.next_attempt_at)row.append(node("p",`下次重试：${new Date(r.next_attempt_at).toLocaleString()}`,"field-note"));
+    if(r.reflection?.reason)row.append(node("p",r.reflection.reason));
+    if(r.outcome)row.append(node("p",{no_change:"未产生人格变化",applied:"人格变化已生效",empty:"没有待整理来源"}[r.outcome]||r.outcome,"field-note"));
+    return row;
+  },"还没有整理记录。新对话和任务经历会在这里留下整理结果。");
+  keyedList($("cognition-sources"),data.sources.slice(-50).reverse().map(s=>({...s,key:s.id})),s=>{
+    const row=node("div",undefined,"evidence-row"),role={user:"主人消息",assistant:"助手回复",failure:"失败记录",outcome:"任务结果",legacy:"旧版待整理来源"}[s.role]||s.role;
+    row.append(node("small",`${role} · ${s.cleared?"已清空，不再整理":`${s.covered} / ${s.total} 字符已覆盖`}`),sourceDetail(s.id));return row;
+  },"还没有待整理的经历来源。");
+}
+function renderPersonaSections() {
+  const profile=snapshot.persona;
+  keyedList($("persona-sections"),[...Object.entries(profile.sections||{}).map(([key,text])=>({key,text,label:personaNames[key]})),{key:"observations",label:"关于主人的推测性观察（模型推断）",text:profile.user_observations||"尚无观察"}],s=>{
+    const row=node("section",undefined,"persona-section");row.append(node("h3",s.label),node("p",s.text,"prose"));return row;
+  },"");
+}
+function renderPersonaChanges(changes) {
+  keyedList($("persona-changes"),changes.slice(0,20).map(c=>({...c,key:c.id})),c=>{
+    const row=node("details",undefined,"maintenance-run");
+    row.append(node("summary",`${c.actor==="owner_rollback"?"手动回滚":"自动演化"} · ${{applied:"已生效",no_change:"无需变化",rejected:"已拒绝",conflict:"版本冲突"}[c.status]||c.status}${c.version!==null?` · v${c.version}`:""}`));
+    for(const change of c.changes||[]){
+      const item=node("section",undefined,"persona-section");item.append(node("h3",personaNames[change.target]||"推测性观察"),node("p",change.reason));
+      const diff=node("div",undefined,"persona-diff"),before=node("div"),after=node("div");
+      before.append(node("small","变化前"),node("p",change.old||"（空）","prose"));after.append(node("small","变化后"),node("p",change.new||"（空）","prose"));diff.append(before,after);item.append(diff);
+      for(const ref of change.evidence_refs||[])item.append(sourceDetail(ref));row.append(item);
+    }
+    if(c.error)row.append(node("p",c.error,"run-error"));return row;
+  },"还没有人格变化。证据不足时会明确保留当前人格。");
+}
+function cognitionPolicyBody(extra={}) {
+  const policy=snapshot.cognition.policy;
+  return {expected_version:policy.version,enabled:policy.enabled,persona_enabled:policy.persona_enabled,interval_minutes:policy.interval_minutes,...extra};
+}
+$("cognition-policy-form").addEventListener("input",()=>{cognitionDirty=true;});
+bindForm("cognition-policy-form",async()=>{
+  await api("cognition/policy",cognitionPolicyBody({expected_version:cognitionEditVersion,enabled:$("cognition-enabled").checked,interval_minutes:Number($("cognition-interval").value)}));cognitionDirty=false;
+});
+$("organize-now").addEventListener("click",()=>busy($("organize-now"),async()=>{
+  const result=await api("cognition/run",{expected_version:snapshot.cognition.policy.version});
+  notice(result.run_id?"整理请求已记录，可在下方查看进度。":"没有新的待整理来源。");
+}));
+$("persona-auto-toggle").addEventListener("click",()=>busy($("persona-auto-toggle"),()=>api("cognition/policy",cognitionPolicyBody({persona_enabled:!snapshot.cognition.policy.persona_enabled}))));
+
 function renderMemoryStatus() {
   if(!snapshot?.memory)return;
   const memory=snapshot.memory,last=memory.last_context;
@@ -466,6 +546,9 @@ $("edit-persona").addEventListener("click",()=>{
     const input=node("textarea");input.id=`persona-${key}`;input.rows=3;input.maxLength=8000;input.value=profile.sections[key]||"";
     const title=node("label",label);title.htmlFor=input.id;controls.push(title,input);
   }
+  const observationsTitle=node("label","关于主人的推测性观察（可纠正，不等于已确认资料）");observationsTitle.htmlFor="persona-observations";
+  const observations=node("textarea");observations.id="persona-observations";observations.rows=3;observations.maxLength=8000;observations.value=profile.user_observations||"";
+  controls.push(observationsTitle,observations);
   const publicTitle=node("label","公开人格投影（群聊使用）");publicTitle.htmlFor="persona-public";
   const publicInput=node("textarea");publicInput.id="persona-public";publicInput.rows=3;publicInput.maxLength=8000;publicInput.required=true;publicInput.value=profile.public;
   controls.push(publicTitle,publicInput);fields.replaceChildren(...controls);
@@ -475,7 +558,7 @@ function closePersona(){$("persona-form").hidden=true;$("persona-view").hidden=f
 $("cancel-persona").addEventListener("click",closePersona);
 bindForm("persona-form",async()=>{
   const sections=Object.fromEntries(Object.keys(personaNames).map(key=>[key,$(`persona-${key}`).value]));
-  await api("persona",{expected_version:personaEditVersion,public:$("persona-public").value,sections});closePersona();await loadPersonaHistory();
+  await api("persona",{expected_version:personaEditVersion,public:$("persona-public").value,sections,user_observations:$("persona-observations").value});closePersona();await loadPersonaHistory();
 });
 bindForm("memory-search-form",async()=>{
   const query=$("memory-query").value.trim();

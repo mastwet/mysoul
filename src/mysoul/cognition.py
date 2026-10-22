@@ -243,8 +243,10 @@ class CognitiveService:
         for data in self.store.all("cognitive_run"):
             if data["status"] in {"queued", "running", "failed"}:
                 run = CognitiveRun.model_validate(data)
-                run.next_attempt_at = None
-                self.save(run)
+                if run.status != "running":
+                    run.status = "queued"
+                    run.next_attempt_at = None
+                    self.save(run)
                 return run
         if not self.sources.pending_window(self.policy().window_chars):
             return None

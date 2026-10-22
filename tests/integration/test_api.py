@@ -175,3 +175,58 @@ def test_three_minute_heartbeat_can_be_saved(client):
     state = client.get("/api/status").json()["state"]
     assert state["autonomy_interval_minutes"] == 3
     assert state["next_initiative_at"] is not None
+
+
+def test_cognition_api_queues_persisted_run_and_inspects_sources(client):
+    import time
+
+    policy = client.get("/api/cognition").json()["policy"]
+    paused = client.post("/api/cognition/policy", json={
+        "expected_version": policy["version"], "enabled": False,
+        "persona_enabled": False, "interval_minutes": 3,
+    })
+    assert paused.status_code == 200
+    client.post("/api/chat", json={"text": "完整来源测试"})
+    queued = client.post("/api/cognition/run", json={"expected_version": 1})
+    assert queued.status_code == 202
+    ident = queued.json()["run_id"]
+    for _ in range(100):
+        runs = client.get("/api/cognition").json()["runs"]
+        run = next(r for r in runs if r["id"] == ident)
+        if run["status"] in {"completed", "failed"}:
+            break
+        time.sleep(.01)
+    assert run["status"] == "completed"
+    sources = client.get("/api/cognition").json()["sources"]
+    assert all(s["covered"] == s["total"] for s in sources)
+    evidence = client.get("/api/evidence/" + sources[0]["id"])
+    assert evidence.status_code == 200
+    assert evidence.json()["text"] == "完整来源测试"
+    assert client.post("/api/cognition/run", json={"expected_version": 0}).status_code == 409
+
+
+@pytest.mark.parametrize("route,body", [
+    ("/api/cognition/run", {"expected_version": 0}),
+    ("/api/cognition/policy", {"expected_version": 0, "enabled": False,
+                              "persona_enabled": False, "interval_minutes": 3}),
+    ("/api/persona/rollback", {"expected_version": 0, "target_version": 0}),
+])
+def test_new_mutations_preserve_origin_csrf_and_auth(client, route, body):
+    assert client.post(route, json=body, headers={"Origin": "https://evil.test"}).status_code == 403
+    assert client.post(route, json=body, headers={"X-CSRF-Token": "wrong"}).status_code == 403
+    assert client.post(route, json=body, headers={"Authorization": ""}).status_code == 401
+
+
+def test_persona_api_manual_observation_correction_and_rollback(client):
+    response = client.post("/api/persona", json={
+        "expected_version": 0, "user_observations": "主人纠正了推测",
+    })
+    assert response.status_code == 200
+    assert response.json()["user_observations"] == "主人纠正了推测"
+    rolled = client.post("/api/persona/rollback", json={"expected_version": 1, "target_version": 0})
+    assert rolled.json()["version"] == 2
+    assert rolled.json()["user_observations"] == ""
+    assert client.get("/api/persona/changes").json()[0]["actor"] == "owner_rollback"
+    assert client.post("/api/persona/rollback", json={
+        "expected_version": 1, "target_version": 0,
+    }).status_code == 409

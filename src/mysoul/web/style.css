@@ -1540,3 +1540,22 @@ dialog::backdrop {
     display: none;
   }
 }
+
+.maintenance-controls {display:flex;align-items:end;gap:16px;flex-wrap:wrap;margin:20px 0 8px}
+.maintenance-controls label {display:grid;gap:8px;font-size:13px}
+.maintenance-controls .check-row {display:flex;align-items:center;align-self:center;gap:8px}
+.maintenance-controls input[type=number] {width:120px}
+.maintenance-run {border-top:1px solid var(--border);padding:16px 0;overflow-wrap:anywhere}
+.maintenance-run summary {cursor:pointer;line-height:1.8;font-size:13px}
+.maintenance-run p {font-size:13px;line-height:1.8}
+.run-error {color:var(--danger,#b13d35)}
+.source-detail {font-size:12px;margin:12px 0;overflow-wrap:anywhere}
+.source-detail summary {cursor:pointer;color:var(--muted)}
+.source-detail .prose {max-height:320px;overflow:auto;padding:12px;background:var(--subtle);border-radius:8px}
+.persona-section {padding:12px 0}
+.persona-section h3 {font-size:13px;margin:8px 0}
+.persona-diff {display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px}
+.persona-diff>div {padding:14px;background:var(--subtle);border-radius:10px;min-width:0}
+.persona-diff small {color:var(--muted)}
+.persona-diff .prose {font-size:13px;overflow-wrap:anywhere}
+@media(max-width:600px){.persona-diff{grid-template-columns:minmax(0,1fr)}.maintenance-controls{align-items:start}.maintenance-run summary .muted{display:block}}

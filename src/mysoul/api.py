@@ -62,14 +62,28 @@ class ResumeInput(Contract):
     decision: Literal["continue", "replan", "abandon"]
 
 
+class CognitionPolicyInput(Contract):
+    expected_version: int = Field(ge=0)
+    enabled: bool
+    persona_enabled: bool
+    interval_minutes: int = Field(ge=3, le=1440)
+    window_chars: int | None = Field(default=None, ge=1000, le=64000)
+    tail_turns: int | None = Field(default=None, ge=0, le=20)
+
+
+class PersonaRollbackInput(RevisionInput):
+    target_version: int = Field(ge=0)
+
+
 class PersonaInput(Contract):
     expected_version: int = Field(ge=0)
     public: str | None = Field(default=None, min_length=1, max_length=8000)
     sections: PersonaSections | None = None
+    user_observations: str | None = Field(default=None, max_length=8000)
 
     @property
     def has_changes(self):
-        return self.public is not None or self.sections is not None
+        return any(v is not None for v in (self.public, self.sections, self.user_observations))
 
 
 class LifeInput(Contract):
@@ -257,6 +271,7 @@ def create_app(settings: Settings | None = None, *, token=None, service=None):
             body.expected_version,
             sections=body.sections,
             public=body.public,
+            user_observations=body.user_observations,
         )
 
     @app.get("/api/persona/history", dependencies=guard)
@@ -302,6 +317,35 @@ def create_app(settings: Settings | None = None, *, token=None, service=None):
         task = asyncio.create_task(background(coroutine))
         jobs.add(task)
         task.add_done_callback(jobs.discard)
+
+    @app.get("/api/cognition", dependencies=guard)
+    async def cognition_status():
+        return app.state.soul.cognition.status()
+
+    @app.post("/api/cognition/policy", dependencies=guard)
+    async def cognition_policy(body: CognitionPolicyInput):
+        return app.state.soul.cognition.set_policy(**body.model_dump())
+
+    @app.post("/api/cognition/run", dependencies=guard, status_code=202)
+    async def cognition_run(body: RevisionInput):
+        soul = app.state.soul
+        run = soul.cognition.enqueue(body.expected_version)
+        if run is None:
+            return {"status": "empty", "run_id": None}
+        launch(soul.cognition.run_due(force=True))
+        return {"status": run.status, "run_id": run.id}
+
+    @app.get("/api/evidence/{evidence_id}", dependencies=guard)
+    async def evidence_detail(evidence_id: str):
+        return app.state.soul.store.evidence(evidence_id)
+
+    @app.get("/api/persona/changes", dependencies=guard)
+    async def persona_changes():
+        return app.state.soul.persona.changes()
+
+    @app.post("/api/persona/rollback", dependencies=guard)
+    async def persona_rollback(body: PersonaRollbackInput):
+        return app.state.soul.persona.rollback(body.expected_version, body.target_version)
 
     @app.post("/api/goals", dependencies=guard, status_code=202)
     async def start_goal(body: ChatInput):
