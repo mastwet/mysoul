@@ -43,3 +43,8 @@ All results are local development evidence, not live deployment claims.
 - RED: evolution modules absent; reflection service absent. GREEN: 9 tests passed for evidence, isolated candidates, objective failure, hash-bound approval, pinned versions, activation, rollback and budgeted reflection.
 - Regression found and fixed: historical recall was being counted as current-task tool progress. A distinct step_results field now carries only this task's results.
 - Candidate evaluation uses a deterministic draft/verify fixture; no claim of real-model skill improvement.
+
+## T09
+- RED: API absent; runtime environment/tick/lease tests failed before implementation. GREEN: 5 API and 3 runtime tests passed.
+- Browser walkthrough on the actual local server: authenticated chat; whole Recap edit/save (v1); evidence-driven reflection; candidate objective test; operator approval/activation; rollback; finite task completion.
+- UI uses the existing application services. Edit conflicts preserve the form and its original base revision.

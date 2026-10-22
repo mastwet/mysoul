@@ -1,5 +1,6 @@
 """Trusted operator settings; credentials are resolved from the environment only."""
 
+import os
 from pathlib import Path
 from typing import Literal
 
@@ -22,6 +23,28 @@ class Settings(Contract):
     fatigue_per_hour: float = Field(default=0.2, ge=0, le=1)
     recovery_per_hour: float = Field(default=0.4, ge=0, le=1)
     event_capacity: int = Field(default=256, ge=1, le=10000)
+    model_mode: Literal["replay", "procedure-replay", "provider"] = "replay"
+    memory_backend: Literal["fixture", "mempalace"] = "fixture"
+    mempalace_config: Path | None = None
+
+    @classmethod
+    def from_environment(cls):
+        mapping = {
+            "MYSOUL_DATA_DIR": "data_dir",
+            "MYSOUL_MODEL_MODE": "model_mode",
+            "MYSOUL_PHONE_BACKEND": "backend",
+            "MYSOUL_OWNER_ID": "owner_id",
+            "MYSOUL_SEND_ENABLED": "send_enabled",
+            "MYSOUL_MEMORY_BACKEND": "memory_backend",
+            "MYSOUL_MEMPALACE_CONFIG": "mempalace_config",
+            "MYSOUL_MODEL_CALL_LIMIT": "model_call_limit",
+            "MYSOUL_TOKEN_BUDGET": "token_budget",
+        }
+        values = {field: os.environ[key] for key, field in mapping.items() if key in os.environ}
+        values["allowed_groups"] = {
+            g.strip() for g in os.environ.get("MYSOUL_ALLOWED_GROUPS", "").split(",") if g.strip()
+        }
+        return cls.model_validate(values)
 
     @model_validator(mode="after")
     def sending_requires_identity(self):

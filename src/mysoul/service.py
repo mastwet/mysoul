@@ -15,6 +15,7 @@ from mysoul.domain import (
 from mysoul.effects import EffectDispatcher
 from mysoul.executor import Executor
 from mysoul.laputa import ContextAssembler, RecapStore
+from mysoul.lease import SubjectLease
 from mysoul.life import LifeController
 from mysoul.memory import FixtureMemory
 from mysoul.model import ReplayModel
@@ -30,7 +31,23 @@ class SoulService:
         self.settings = settings
         self.store = StateStore(settings.data_dir / "state.sqlite")
         self.store.load_subject()
+        if model is None and settings.model_mode == "provider":
+            from mysoul.provider import OpenAICompatibleModel
+
+            model = OpenAICompatibleModel.from_environment()
+        elif model is None and settings.model_mode == "procedure-replay":
+            from mysoul.evolution import ProcedureReplayModel
+
+            model = ProcedureReplayModel()
         self.model = model or ReplayModel()
+        if phone is None and settings.backend == "napcat":
+            import os
+
+            from mysoul.phone.napcat import NapCatPhone
+
+            phone = NapCatPhone(
+                os.environ["MYSOUL_NAPCAT_URL"], os.environ["MYSOUL_NAPCAT_TOKEN"], settings
+            )
         self.phone = phone or ReplayPhone()
         if bool(self.phone.capabilities["live"]) != (settings.backend == "napcat"):
             raise ValueError("Phone backend differs from trusted runtime configuration")
@@ -52,9 +69,27 @@ class SoulService:
             settings.data_dir / "graph-checkpoints.sqlite",
             settings,
         )
+        self.lease = SubjectLease(settings.data_dir / "subject.lock")
+        self.phone_cursor = (self.store.get("cursor", "phone") or {}).get("value")
+        self.memory_process = None
 
     async def __aenter__(self):
-        await self.executor.open()
+        try:
+            self.lease.acquire()
+            if self.settings.memory_backend == "mempalace":
+                from mysoul.mempalace import MemPalaceProcess
+
+                if not self.settings.mempalace_config:
+                    raise ValueError("MemPalace process configuration required")
+                self.memory_process = MemPalaceProcess.from_file(
+                    self.settings.mempalace_config, self.store
+                )
+                self.memory = await self.memory_process.__aenter__()
+            await self.executor.open()
+        except BaseException:
+            self.lease.release()
+            self.store.close()
+            raise
         return self
 
     async def __aexit__(self, *args):
@@ -62,7 +97,57 @@ class SoulService:
         close = getattr(self.phone, "close", None)
         if close:
             await close()
+        close_model = getattr(self.model, "close", None)
+        if close_model:
+            await close_model()
+        if self.memory_process:
+            await self.memory_process.__aexit__(*args)
         self.store.close()
+        self.lease.release()
+
+    async def tick(self):
+        batch = await self.phone.observe(self.phone_cursor)
+        for event in batch.events:
+            self.scheduler.offer(event.model_copy(update={"trust": "data"}))
+        self.phone_cursor = batch.cursor
+        self.store.put("cursor", "phone", {"value": batch.cursor})
+        if self.executor.running:
+            return
+        events = self.scheduler.drain()
+        if not events:
+            await self.life.choose([])
+            return
+        groups = {}
+        for event in events:
+            if self.store.get("interaction", event.id) or any(
+                e.dedup_key == event.dedup_key for e in self.store.events()
+            ):
+                continue
+            groups.setdefault(event.scope.model_dump_json(), []).append(event)
+        for group in groups.values():
+            context = await self.context(group[0].scope, "\n".join(e.content for e in group))
+            decision = await self.life.choose(group, context)
+            for event in group:
+                await self._ingest(event, decision=decision)
+        if self.settings.memory_backend == "mempalace":
+            from mysoul.memory import flush_memory_queue
+
+            await flush_memory_queue(self.store, self.memory)
+
+    async def run_loop(self, stop):
+        import asyncio
+
+        while not stop.is_set():
+            try:
+                await self.tick()
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                self.store.put("job_error", "phone-loop", {"error": type(exc).__name__})
+            try:
+                await asyncio.wait_for(stop.wait(), 5)
+            except TimeoutError:
+                pass
 
     async def context(self, scope, task=""):
         persona = self.store.get("config", "persona") or {"public": "A helpful companion."}
@@ -134,14 +219,15 @@ class SoulService:
         await self.executor.interrupt(event)
         return await self._ingest(event)
 
-    async def _ingest(self, event: Event):
+    async def _ingest(self, event: Event, decision=None):
         if not self.store.add_event(event):
             return {"choice": "duplicate", "event_id": event.id}
         self.store.add_evidence(
             Evidence(id=event.id, text=event.content, scope=event.scope, source=event.source)
         )
-        context = await self.context(event.scope, event.content)
-        decision = await self.life.choose([event], context)
+        if decision is None:
+            context = await self.context(event.scope, event.content)
+            decision = await self.life.choose([event], context)
         if event.trust == "owner_command":
             choice = "owner_served"
         elif "@mysoul" in event.content:
@@ -160,7 +246,14 @@ class SoulService:
             "event_id": event.id,
             "activity": decision.activity,
             "text": text,
+            "input": event.content,
         }
+        if choice == "draft":
+            self.store.put(
+                "draft",
+                event.id,
+                {"text": text, "scope": event.scope.model_dump(), "status": "draft"},
+            )
         self.store.put("interaction", event.id, result)
         return result
 
@@ -211,6 +304,15 @@ class SoulService:
         return proposal
 
     def status(self):
+        with self.store.lock:
+            from mysoul.domain import ToolResult
+
+            effects = [
+                ToolResult.model_validate_json(row[0]).model_dump(mode="json")
+                for row in self.store.db.execute(
+                    "SELECT result FROM effects ORDER BY rowid DESC LIMIT 100"
+                )
+            ]
         return {
             "state": self.store.load_subject().model_dump(mode="json"),
             "activities": self.store.all("activity"),
@@ -226,4 +328,8 @@ class SoulService:
             },
             "backend": self.settings.backend,
             "send_enabled": self.settings.send_enabled,
+            "persona": self.store.get("config", "persona") or {"public": "A helpful companion."},
+            "reflections": self.store.all("reflection"),
+            "errors": self.store.all("job_error")[-20:],
+            "effects": effects,
         }
