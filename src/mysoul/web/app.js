@@ -160,14 +160,15 @@ document.addEventListener("keydown",event=>{
   }
 });
 function setView(view) {
-  if(!["chat","tasks","memory","skills"].includes(view))return;
+  if(!["chat","tasks","memory","persona","skills"].includes(view))return;
   activeView=view;
   document.querySelectorAll(".view").forEach(el=>el.hidden=el.id!==view);
   document.querySelectorAll("[data-view]").forEach(el=>{el.classList.toggle("active",el.dataset.view===view);if(el.dataset.view===view)el.setAttribute("aria-current","page");else el.removeAttribute("aria-current");});
-  const title={chat:"mysoul",tasks:"任务",memory:"记忆",skills:"技能"}[view];
+  const title={chat:"mysoul",tasks:"任务",memory:"记忆",persona:"人格",skills:"技能"}[view];
   $("page-title").textContent=title;document.title=`mysoul · ${view==="chat"?"对话":title}`;
   if(mobile.matches){mobileSidebar=false;syncSidebar();}
   if(view==="chat")requestAnimationFrame(()=>$("chat-text").focus());
+  if(view==="persona")loadPersonaHistory();
   refresh();
 }
 document.querySelectorAll("[data-view]").forEach(el=>el.addEventListener("click",()=>setView(el.dataset.view)));
@@ -176,7 +177,6 @@ function selectSetting(name) {
   document.querySelectorAll("[data-setting]").forEach(el=>{const active=el.dataset.setting===name;el.classList.toggle("active",active);if(active)el.setAttribute("aria-current","page");else el.removeAttribute("aria-current");});
   document.querySelectorAll(".setting-page").forEach(el=>el.hidden=el.id!==`setting-${name}`);
   $("settings-content").scrollTop=0;
-  if(name==="persona")loadPersonaHistory();
 }
 function openSettings(section="general") {
   settingsOpener=document.activeElement;

@@ -24,6 +24,8 @@ long provider calls were reported as `Model unavailable`.
 - Updated the UI with persona editing/version history, memory search and status,
   model context/timeout controls, and actionable chat errors that retain the
   draft without automatic resend.
+- Promoted the persona editor to its own left-sidebar page so it is reachable
+  without opening Settings.
 - Prevented a completed owner chat answer from also being dispatched as a second
   background work goal.
 

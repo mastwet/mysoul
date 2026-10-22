@@ -108,7 +108,7 @@ test("persona editor exposes eight versioned sections and a public projection",a
   const ui=await fixture();
   try{
     const d=ui.document;
-    d.getElementById("open-settings").click();d.querySelector('[data-setting="persona"]').click();
+    d.querySelector('[data-view="persona"]').click();
     d.getElementById("edit-persona").click();
     assert.equal(d.querySelectorAll("#persona-fields textarea").length,9);
     d.getElementById("persona-identity").value="A clearer identity";
@@ -126,7 +126,7 @@ test("persona edits keep the version captured when the editor opened",async()=>{
   const ui=await fixture();
   try{
     const d=ui.document;
-    d.getElementById("open-settings").click();d.querySelector('[data-setting="persona"]').click();
+    d.querySelector('[data-view="persona"]').click();
     d.getElementById("edit-persona").click();
     d.getElementById("persona-identity").value="Stale editor text";
     ui.server.persona={...ui.server.persona,version:1,public:"Newer version"};
@@ -135,15 +135,20 @@ test("persona edits keep the version captured when the editor opened",async()=>{
     await until(()=>!d.getElementById("persona-form").hasAttribute("aria-busy"));
     assert.equal(ui.writes.at(-1).body.expected_version,0);
     assert.equal(ui.server.persona.version,1);
-    assert.match(d.getElementById("settings-feedback").textContent,/状态已变化/);
+    assert.match(d.getElementById("notice-text").textContent,/状态已变化/);
   }finally{ui.close();}
 });
 
-test("persona history loads in settings and refreshes after saving",async()=>{
+test("persona is a sidebar page and its history refreshes after saving",async()=>{
   const ui=await fixture();
   try{
     const d=ui.document;
-    d.getElementById("open-settings").click();d.querySelector('[data-setting="persona"]').click();
+    const nav=d.querySelector('[data-view="persona"]');
+    assert.ok(nav,"persona should have a first-class sidebar entry");
+    assert.equal(d.querySelector('[data-setting="persona"]'),null,"persona should no longer be nested under settings");
+    nav.click();
+    assert.equal(d.getElementById("page-title").textContent,"人格");
+    assert.equal(d.getElementById("persona").hidden,false);
     await until(()=>d.getElementById("persona-history").textContent.includes("人格 v0"));
     assert.ok(ui.historyReads.length>=1);
     d.getElementById("edit-persona").click();

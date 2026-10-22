@@ -30,6 +30,7 @@
         <button class="nav-item active" data-view="chat" type="button" aria-current="page"><span data-icon="chat"></span>对话</button>
         <button class="nav-item" data-view="tasks" type="button"><span data-icon="tasks"></span>任务<span id="task-count" class="nav-count" hidden></span></button>
         <button class="nav-item" data-view="memory" type="button"><span data-icon="memory"></span>记忆</button>
+        <button class="nav-item" data-view="persona" type="button"><span data-icon="person"></span>人格</button>
         <button class="nav-item" data-view="skills" type="button"><span data-icon="skills"></span>技能<span id="review-count" class="nav-count" hidden></span></button>
       </nav>
       <div class="recent-section"><p class="nav-caption">最近消息</p><div id="recent-messages" class="recent-list"></div></div>
@@ -81,6 +82,12 @@
         <section class="section-block"><h2>来源证据</h2><div id="evidence"></div></section>
       </div></main>
 
+      <main id="persona" class="view page-scroll" hidden><div class="page-content">
+        <div class="page-heading"><div><h1>人格</h1><p>塑造 mysoul 的身份、关系、原则与成长方向。</p></div></div>
+        <section class="surface"><h2>人格系统</h2><p class="muted">人格分为八个部分，按版本保留。公开人格投影会用于群聊；其余部分只进入主人对话。技能提案不能改写人格。</p><p id="persona-view" class="prose"></p><p id="persona-version" class="field-note"></p><button id="edit-persona" class="secondary" type="button">编辑人格配置</button><form id="persona-form" hidden><div id="persona-fields"></div><div class="form-actions"><button id="cancel-persona" class="secondary" type="button">取消</button><button class="primary" type="submit">保存新版本</button></div></form></section>
+        <details class="surface disclosure"><summary>人格版本记录</summary><div id="persona-history"></div></details>
+      </div></main>
+
       <main id="skills" class="view page-scroll" hidden><div class="page-content">
         <div class="page-heading"><div><h1>技能</h1><p>让经验成为更好的做事方式，改变由你审核。</p></div></div>
         <section class="surface"><div class="section-heading"><h2>当前工作技能</h2><span class="hash-label" id="skill-version"></span></div><pre id="skill-view" class="prose code-prose"></pre><details class="disclosure"><summary>基于经验改进</summary><form id="proposal-form"><label for="evidence-select">来源证据</label><select id="evidence-select" required></select><label for="candidate-text">技能 Markdown</label><textarea id="candidate-text" rows="5" placeholder="# Work&#10;Procedure: verify&#10;完成前读取并验证产物。" maxlength="16000" required></textarea><div class="form-actions"><button id="reflect" class="secondary" type="button">基于证据反思</button><button class="primary" type="submit">提交提案</button></div></form></details><details class="disclosure"><summary>恢复历史版本</summary><form id="rollback-form"><label for="rollback-select">技能版本</label><select id="rollback-select"></select><div class="form-actions"><button class="secondary" type="submit">对后续任务启用此版本</button></div></form></details></section>
@@ -97,7 +104,7 @@
   <dialog id="settings-dialog" class="settings-dialog" aria-labelledby="settings-title">
     <div class="dialog-header"><h2 id="settings-title">设置</h2><button class="icon-button" type="button" data-close="settings-dialog" aria-label="关闭设置"></button></div>
     <div class="settings-layout">
-      <nav class="settings-nav" aria-label="设置分类"><button type="button" class="settings-tab active" data-setting="general" aria-current="page"><span data-icon="appearance"></span>外观与输入</button><button type="button" class="settings-tab" data-setting="model"><span data-icon="connection"></span>模型服务</button><button type="button" class="settings-tab" data-setting="life"><span data-icon="activity"></span>主体状态</button><button type="button" class="settings-tab" data-setting="persona"><span data-icon="person"></span>人格系统</button><button type="button" class="settings-tab" data-setting="connections"><span data-icon="connection"></span>接入与预算</button></nav>
+      <nav class="settings-nav" aria-label="设置分类"><button type="button" class="settings-tab active" data-setting="general" aria-current="page"><span data-icon="appearance"></span>外观与输入</button><button type="button" class="settings-tab" data-setting="model"><span data-icon="connection"></span>模型服务</button><button type="button" class="settings-tab" data-setting="life"><span data-icon="activity"></span>主体状态</button><button type="button" class="settings-tab" data-setting="connections"><span data-icon="connection"></span>接入与预算</button></nav>
       <div id="settings-content" class="settings-content">
         <section id="setting-general" class="setting-page"><h3>外观与输入</h3><div class="setting-row"><div><label for="theme">主题</label><p>选择更适合此刻的外观。</p></div><select id="theme"><option value="light">浅色</option><option value="dark">深色</option><option value="system">跟随系统</option></select></div><div class="setting-row"><div><label for="enter-send">Enter 发送消息</label><p>关闭后，使用 Ctrl / ⌘ + Enter 发送。</p></div><input id="enter-send" class="switch" type="checkbox" role="switch" checked></div><p class="field-note">外观与输入偏好仅保存在当前浏览器。</p></section>
         <section id="setting-model" class="setting-page" hidden>
@@ -126,7 +133,6 @@
           </form>
         </section>
         <section id="setting-life" class="setting-page" hidden><h3>主体状态</h3><form id="life-form"><label for="mode">运行模式</label><select id="mode"><option value="normal">日常 · 自然安排活动</option><option value="quiet">安静 · 减少主动唤醒</option><option value="focused">专注 · 优先有限工作</option></select><p class="field-note">模式影响活动偏好，权限和预算限制始终生效。</p><label for="fatigue-input">校准疲劳值</label><div class="fatigue-input-row"><input id="fatigue-range" aria-label="疲劳滑块" type="range" min="0" max="100" step="1" value="0"><div class="percent-input"><input id="fatigue-input" type="number" min="0" max="100" step="1" value="0" required><span>%</span></div></div><p class="field-note">疲劳会随活动累积、随休息恢复。手动校准立即改变当前状态。</p><div class="form-actions"><span id="life-saved" class="save-feedback" role="status"></span><button class="primary" type="submit">保存状态</button></div></form></section>
-        <section id="setting-persona" class="setting-page" hidden><h3>人格系统</h3><p class="muted">主人配置的人格有八个部分，按版本保留。公开人格投影会用于群聊；其余部分只进入主人对话。技能提案不能改写人格。</p><p id="persona-view" class="prose"></p><p id="persona-version" class="field-note"></p><button id="edit-persona" class="secondary" type="button">编辑人格配置</button><form id="persona-form" hidden><div id="persona-fields"></div><div class="form-actions"><button id="cancel-persona" class="secondary" type="button">取消</button><button class="primary" type="submit">保存新版本</button></div></form><details class="disclosure"><summary>人格版本记录</summary><div id="persona-history"></div></details></section>
         <section id="setting-connections" class="setting-page" hidden><h3>接入与预算</h3><p id="connection-description" class="muted"></p><ul id="gates" class="connection-list"></ul><div class="budget-block"><h4>当前预算使用</h4><div class="budget-row"><span>模型调用</span><strong id="budget-calls"></strong></div><progress id="calls-meter" aria-label="模型调用预算" value="0" max="100"></progress><div class="budget-row"><span>累计 token 估算</span><strong id="budget-tokens"></strong></div><progress id="tokens-meter" aria-label="Token 预算" value="0" max="50000"></progress><p class="field-note">计数持久保存，不是实际账单。不限输出时仅累计输入与协议开销估算，无法作为费用上限。</p></div></section>
       </div>
     </div>
