@@ -1,0 +1,31 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mysoul"
+version = "0.1.0"
+description = "A bounded, single-subject companion with reviewed skill evolution"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "pydantic>=2.10,<3", "langgraph>=1,<2", "langgraph-checkpoint-sqlite>=3,<4",
+  "fastapi>=0.115,<1", "uvicorn>=0.34,<1", "httpx>=0.28,<1", "mcp>=1.12,<2",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8,<10", "pytest-asyncio>=1,<2", "ruff>=0.11,<1"]
+
+[project.scripts]
+mysoul = "mysoul.__main__:main"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+markers = ["live: explicitly configured live integration", "mempalace: real upstream memory engine", "isolation: real code isolation backend"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
