@@ -1,6 +1,7 @@
 # Vivy-aligned memory consolidation and persona evolution
 
-Status: proposed design for owner review; no product behavior has changed.
+Status: scope reviewed with owner correction: persona changes should activate automatically.
+Implementation plan review pending; no product behavior has changed.
 Date: 2026-10-22 (Asia/Shanghai).
 Baseline: mysoul cfdb5b2; local agent-vivy 7b42b292; local laputa 4b2bec2.
 
@@ -8,7 +9,7 @@ Baseline: mysoul cfdb5b2; local agent-vivy 7b42b292; local laputa 4b2bec2.
 
 The owner requests Vivy-equivalent memory organization and persona evolution in
 mysoul. Success means new lived evidence is durably collected, organized into
-usable continuity, considered for evidence-backed persona changes, and visibly
+usable continuity, used for automatically activated evidence-backed persona changes, and visibly
 processed without requiring a manual maintenance request after every chat.
 The current Python service, SQLite authority, finite LangGraph executor and
 Memory adapter remain the implementation. No Go runtime or second scheduler is
@@ -16,8 +17,8 @@ introduced. Existing three-minute initiative and explicit local-test settings
 remain available.
 
 This extends D006/D010, which currently forbid model-proposed persona evolution.
-A superseding decision will authorize proposals through the persona authority,
-not unrestricted model writes. Skill evolution remains a separate existing
+A superseding decision will authorize validated automatic changes through the
+persona authority, with explicit protected fields and rollback. Skill evolution remains a separate existing
 reviewed chain. This draft does not change the accepted decisions yet.
 
 ## Reference findings: implementation versus target policy
@@ -48,7 +49,7 @@ Current mysoul has versioned Recap with a pending queue, but folds individual
 1000-character evidence excerpts in batches of four. Readiness is handed to a
 model activity choice; a resting decision can defer unchanged maintenance.
 Persona has eight editable sections and revision history, but no model proposal,
-review decision or pinned persona projection for future task boundaries.
+automatic activation record or pinned persona projection for future task boundaries.
 
 ## Approach and alternatives
 
@@ -83,7 +84,8 @@ persona activation. Neither is selected.
 5. **Effects:** publish local results through their existing owners, with stable
    operation IDs and receipts. Long-term-memory writes use the existing outbox;
    external unknown outcomes require reconciliation and are not blindly resent.
-   Persona proposals never write the active persona head.
+   Eligible validated persona changes publish through the persona authority;
+   rejected, stale or protected changes never alter its head.
 6. **Finish:** record covered source coordinates, stage receipts and outcome.
    Restart resumes from committed stages. A committed Recap is not repeated if
    the later reflection failed. A repeated run cannot duplicate a proposal.
@@ -100,18 +102,23 @@ must not delay a due main-chat initiative.
 
 ## Persona authority and activation
 
-- Identity, relationship and dark changes become evidence-backed proposals.
+- Identity, relationship and dark changes are automatically applied after schema,
+  evidence, policy, base-revision/hash and epoch validation. This deliberately
+  differs from the reference DIVA review queue, as explicitly requested by the owner.
 - USER observations have a distinct structured projection; preserve owner-written
   USER material byte-for-byte when applying an observations proposal. Do not copy
   the reference's ambiguous whole-USER actor mapping as an implementation shortcut.
-- WORLD changes are reviewable knowledge proposals. WORLD remains available on
+- WORLD changes are automatically applicable, evidence-backed knowledge updates. WORLD remains available on
   explicit inspection and is excluded from automatic persona model injection.
 - Redline, Dream, Mission and the public group projection are owner-controlled;
   the automatic chain has no candidate type that can rewrite them.
-- Each proposal stores target, old/new text, reason, source IDs, source window,
-  base revision/hash and candidate hash. Approve checks exact revision and hash;
-  stale, already-decided or incompatible proposals cannot overwrite manual edits.
-- Rejection changes no authority. Approval publishes a new version atomically.
+- Each change stores target, old/new text, reason, source IDs, source window,
+  base revision/hash and candidate hash. Publication checks exact revision/hash;
+  stale or already-applied changes cannot overwrite manual edits or apply twice.
+- Invalid/protected changes leave authority intact and record rejection reasons.
+  Valid changes publish a new version atomically without a per-change approval.
+  Citation validation proves provenance, not semantic truth: observation text
+  stays labeled as model-inferred, and remains inspectable/correctable.
   Rollback publishes a new version based on a chosen historical revision; no
   history is erased. The next admitted owner turn/initiative/task uses the new
   version. In-flight inference and resumed tasks keep their admitted projection.
@@ -128,9 +135,10 @@ keep orchestration in a focused cognitive-service module if adding it to the
 existing files would mix unrelated responsibilities. Preserve skill APIs.
 
 Memory UI shows current Recap, revision, covered/pending sources, recent run
-stages, last result/error, retry and a manual run action. Persona UI adds a review
-queue with evidence and old/new text, accept/reject, history and rollback.
-Do not show a 'completed' label for a failed publish, pending review or outbox
+stages, last result/error, retry and a manual run action. Persona UI adds an automatic-evolution toggle and change history with evidence,
+old/new text, applied/rejected/conflict outcomes and rollback. There is no mandatory
+approval queue in the default automatic mode.
+Do not show a 'completed' label for a failed publish, rejected change or outbox
 failure. Existing edit drafts survive a conflict. All UI actions call the same
 application service and preserve current Host/Origin/CSRF behavior.
 
@@ -151,17 +159,18 @@ bounded; do not reprocess the whole chat archive automatically on first startup.
   coverage and produce inspectable outcomes.
 - Owner interrupt, manual Recap edit/clear and persona edit reject stale work.
   A failed consolidation does not retire its source context.
-- Unapproved/rejected/stale proposals never change persona. Approved revisions
-  affect only future admissions; resumed work retains its pinned snapshot.
+- Valid automatic changes publish without human approval. Rejected/protected/stale
+  changes never alter persona. New revisions affect only future admissions;
+  resumed work retains its pinned snapshot.
 - Frozen fields, owner USER text and group privacy have direct payload tests.
-- UI can inspect sources, run maintenance, review/reject/approve and roll back.
+- UI can inspect sources, run maintenance, pause automatic evolution, inspect
+  automatic changes and roll back.
 - Full Ruff/Python/UI suite and a browser walkthrough pass. Real-provider checks
   run separately with existing authorization; unconfigured MemPalace/QQ gates
   remain explicitly pending. No test or reflection may send a live QQ message.
 
 ## Next stage
 
-Review this draft's lifecycle and persona authority boundary. After approval,
-write the implementation plan with failing-test steps, migrations, code ownership,
-stage gates and focused commits; execute sequentially in the current session as
-previously requested. No implementation or runtime migration has started.
+The owner requested automatic activation instead of per-change review. The
+implementation plan preserves the previously requested sequential execution in
+this chat. No implementation or runtime migration has started.
