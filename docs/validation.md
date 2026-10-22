@@ -27,3 +27,8 @@ All results are local development evidence, not live deployment claims.
 - RED: phone/service modules absent. GREEN: 6 end-to-end replay tests passed.
 - Two independent runs of the same trace produced silent/draft choices; owner interruption retained the goal; restart deduplicated events.
 - Replay has no network client and never instantiates NapCat.
+
+## T06
+- RED: provider and NapCat modules absent. GREEN: 8 fixture-backed contract tests passed.
+- Covered malformed output, refusal, timeout, bounded retry, raw model ID, forged owner names, duplicate events, allowlist/send denial and lost acknowledgment.
+- Real provider and QQ deployment/smoke remain deferred. OneBot mapping checked against https://napneko.github.io/onebot/api and the OneBot 11 public API.
