@@ -130,8 +130,15 @@ class CognitiveStore:
                     self.capture_interaction_in(db, event_id)
                 else:
                     evidence = self.store.evidence(ref)
-                    # Unsettled interactions will be captured atomically when they finish.
-                    if db.execute("SELECT 1 FROM events WHERE id=?", (ref,)).fetchone():
+                    event_row = db.execute("SELECT body FROM events WHERE id=?", (ref,)).fetchone()
+                    if event_row:
+                        event = Event.model_validate_json(event_row[0])
+                        if event.source != "local-initiative":
+                            self._insert(db, "experience:" + ref + ":user", ref, "user",
+                                         event.content, event.scope, event.received_at)
+                            self._insert(db, "experience:" + ref + ":failure", ref, "failure",
+                                         "Interaction unfinished at restart; no confirmed reply.",
+                                         event.scope, event.received_at)
                         continue
                     self._insert(db, "legacy:" + ref, ref, "legacy", evidence.text,
                                  evidence.scope, evidence.created_at)

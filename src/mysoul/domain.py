@@ -219,7 +219,7 @@ class StepDecision(Contract):
     done: bool = False
     tool: str | None = None
     arguments: dict[str, Any] = Field(default_factory=dict)
-    note: str = Field(default="", max_length=4000)
+    note: str = Field(default="", max_length=64000)
     tokens: int = Field(default=1, ge=1)
 
 

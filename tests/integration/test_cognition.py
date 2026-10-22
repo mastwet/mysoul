@@ -174,3 +174,34 @@ async def test_restart_after_recap_commit_does_not_refold(tmp_path):
         await soul.cognition.run_due(force=True)
         assert soul.recap.current().version == 1
         assert not any('[recap]' in p for p in soul.model.payloads)
+
+@pytest.mark.asyncio
+async def test_recap_can_preserve_more_than_four_thousand_characters(tmp_path):
+    class Detailed(ReplayModel):
+        async def execute_step(self, context, tools, limits):
+            return StepDecision(done=True, note="甲" * 5000)
+    async with SoulService(Settings(data_dir=tmp_path), Detailed()) as soul:
+        seed(soul)
+        run = await soul.cognition.run_due(force=True)
+        assert run.status == "completed"
+        assert len(soul.recap.current().text) == 5000
+
+
+def test_legacy_unfinished_owner_turn_remains_a_pending_failure(tmp_path):
+    store = StateStore(tmp_path / "state.sqlite")
+    store.load_subject()
+    recap = RecapStore(store)
+    from mysoul.domain import Evidence
+    event = Event(id="unfinished", dedup_key="unfinished", content="不要丢掉这次请求")
+    store.add_event(event)
+    store.add_evidence(Evidence(id=event.id, text=event.content))
+    recap.enqueue(event.id)
+    sources = cognition.CognitiveStore(store)
+    sources.migrate_pending()
+    window = sources.pending_window(16000)
+    assert window is not None
+    assert window.slices[0].role == "user"
+    assert window.slices[0].text == "不要丢掉这次请求"
+    assert window.slices[1].role == "failure"
+    assert "unfinished" in window.slices[1].text.lower()
+    store.close()
