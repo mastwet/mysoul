@@ -287,12 +287,15 @@ class SoulService:
         turns = []
         for result_json, event_json in reversed(rows):
             result, event = json.loads(result_json), Event.model_validate_json(event_json)
-            turn = [ConversationMessage(role="user", content=event.content, event_id=event.id)]
+            turn = [] if event.source == "local-initiative" else [
+                ConversationMessage(role="user", content=event.content, event_id=event.id)
+            ]
             if self._assistant_evidence(event, result):
                 turn.append(
                     ConversationMessage(role="assistant", content=result["text"], event_id=event.id)
                 )
-            turns.append(turn)
+            if turn:
+                turns.append(turn)
         return turns
 
     def _assistant_evidence(self, event, result):
@@ -302,7 +305,7 @@ class SoulService:
             or not text
             or text.startswith("Replay:")
             or text in {"Model unavailable", "Rest or runtime limit", "Context budget exhausted"}
-            or result.get("choice") not in {"owner_served", "sent", "draft"}
+            or result.get("choice") not in {"owner_served", "sent", "draft", "initiative"}
         ):
             return None
         return Evidence(

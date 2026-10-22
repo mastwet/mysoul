@@ -700,7 +700,23 @@ progress::-moz-progress-bar {
   text-align:center;
   font-size:10px;
   color:var(--muted);
-  margin-top:10px
+  margin-top:10px;
+  display:flex;
+  justify-content:center;
+  gap:7px;
+  flex-wrap:wrap
+}
+.composer-link {
+  border:0;
+  padding:0;
+  background:transparent;
+  color:var(--muted);
+  font:inherit;
+  cursor:pointer
+}
+.composer-link:hover {
+  color:var(--text);
+  text-decoration:underline
 }
 .jump-bottom {
   position:absolute;

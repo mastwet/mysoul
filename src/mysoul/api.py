@@ -3,6 +3,7 @@
 import asyncio
 import secrets
 from contextlib import asynccontextmanager
+from datetime import timedelta
 from pathlib import Path
 from typing import Literal
 
@@ -13,7 +14,7 @@ from pydantic import Field
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from mysoul.config import Settings
-from mysoul.domain import Contract, Goal
+from mysoul.domain import Contract, Goal, now
 from mysoul.evolution import RegressionCase
 from mysoul.model_settings import ModelUpdate
 from mysoul.persona import PersonaSections
@@ -74,6 +75,8 @@ class PersonaInput(Contract):
 class LifeInput(Contract):
     mode: Literal["normal", "quiet", "focused"]
     fatigue: float = Field(ge=0, le=1, allow_inf_nan=False)
+    autonomy_enabled: bool | None = None
+    autonomy_interval_minutes: int | None = Field(default=None, ge=240, le=1440)
 
 
 def operator_token(settings):
@@ -264,7 +267,24 @@ def create_app(settings: Settings | None = None, *, token=None, service=None):
     async def life(body: LifeInput):
         soul = app.state.soul
         state = soul.store.load_subject()
+        was_enabled = state.autonomy_enabled
+        previous_interval = state.autonomy_interval_minutes
         state.mode, state.fatigue = body.mode, body.fatigue
+        if body.autonomy_interval_minutes is not None:
+            state.autonomy_interval_minutes = body.autonomy_interval_minutes
+        if body.autonomy_enabled is not None:
+            state.autonomy_enabled = body.autonomy_enabled
+        if not state.autonomy_enabled:
+            state.next_initiative_at = None
+        elif not was_enabled:
+            state.next_initiative_at = now()
+            state.autonomy_last_result = "waiting"
+        elif state.autonomy_interval_minutes != previous_interval:
+            state.next_initiative_at = now() + timedelta(
+                minutes=state.autonomy_interval_minutes
+            )
+        elif state.next_initiative_at is None:
+            state.next_initiative_at = now()
         soul.store.save_transition(state.dispatch_epoch, state)
         return state
 

@@ -96,6 +96,41 @@ def test_persona_and_mode_are_persisted(client):
     assert client.get("/api/persona/history").json()[0]["public"] == "A careful companion."
 
 
+def test_autonomous_main_chat_schedule_is_persisted_and_bounded(client):
+    assert client.get("/api/status").json()["state"]["autonomy_enabled"] is False
+    response = client.post(
+        "/api/life",
+        json={
+            "mode": "normal",
+            "fatigue": 0,
+            "autonomy_enabled": False,
+            "autonomy_interval_minutes": 720,
+        },
+    )
+    assert response.status_code == 200
+    status = client.get("/api/status").json()["state"]
+    assert status["autonomy_enabled"] is False
+    assert status["autonomy_interval_minutes"] == 720
+    assert status["next_initiative_at"] is None
+
+    assert client.post(
+        "/api/life",
+        json={"mode": "normal", "fatigue": 0, "autonomy_enabled": True},
+    ).status_code == 200
+    enabled = client.get("/api/status").json()["state"]
+    assert enabled["autonomy_enabled"] is True
+    assert enabled["next_initiative_at"] is not None
+    assert client.post(
+        "/api/life",
+        json={
+            "mode": "normal",
+            "fatigue": 0,
+            "autonomy_enabled": True,
+            "autonomy_interval_minutes": 60,
+        },
+    ).status_code == 422
+
+
 def test_persona_version_conflict_and_memory_search(client):
     body = client.get("/api/status").json()
     sections = body["persona"]["sections"]

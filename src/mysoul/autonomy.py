@@ -1,6 +1,8 @@
 """Dispatch preferences within persisted authority; unchanged readiness never polls a model."""
 
+import asyncio
 import json
+from datetime import timedelta
 from hashlib import sha256
 
 from mysoul.domain import Activity, ActivityDecision, Event, Evidence, Goal, Scope, now
@@ -11,6 +13,7 @@ from mysoul.storage import Conflict
 class ActivityRouter:
     def __init__(self, soul):
         self.soul = soul
+        self.initiative_lock = asyncio.Lock()
 
     def enqueue(self, decision, epoch, event):
         soul = self.soul
@@ -149,6 +152,8 @@ class ActivityRouter:
             ], sort_keys=True).encode()
         ).hexdigest()
         wake = soul.store.get("wake", signal)
+        if not any(ready.values()) and await self._main_chat_initiative():
+            return
         if not any(ready.values()) or (wake and wake.get("admitted", True) and not expired):
             decision = await soul.life.choose([])
             if expired:
@@ -173,6 +178,106 @@ class ActivityRouter:
         if soul.store.load_subject().model_calls == state.model_calls:
             soul.store.put("wake", signal, {"ready": ready, "admitted": False})
         await self.perform(decision, state.dispatch_epoch, key=signal, feedback=feedback)
+
+    async def _main_chat_initiative(self):
+        """Make at most one bounded, private owner-chat check per persisted interval."""
+        async with self.initiative_lock:
+            soul = self.soul
+            state = soul.store.load_subject()
+            instant = now()
+            if (
+                not state.autonomy_enabled
+                or state.mode != "normal"
+                or (state.next_initiative_at and state.next_initiative_at > instant)
+                or soul.executor.running
+                or soul.owner_turns
+                or not soul.admission.available()
+            ):
+                return False
+            due = state.next_initiative_at or instant
+            epoch = state.dispatch_epoch
+            state.next_initiative_at = instant + timedelta(minutes=state.autonomy_interval_minutes)
+            state.autonomy_last_checked_at = instant
+            state.autonomy_last_result = "waiting"
+            soul.store.save_transition(epoch, state)
+
+            event = Event(
+                source="local-initiative",
+                sender="mysoul",
+                content="",
+                dedup_key="initiative:" + due.isoformat(),
+            )
+            soul.store.add_event(event)
+            try:
+                context = await soul.context(
+                    Scope(),
+                    "[main-chat initiative]\nCheck whether one brief, useful message belongs "
+                    "in the owner's main chat now.",
+                )
+                context.instructions += (
+                    "\n[自主主聊天] 这是低频私聊检查。只可依据主人消息、已确认记忆和公开人格，"
+                    "在确有具体价值时主动发一条简短消息；否则选择休息。不要泛泛问候、"
+                    "臆测主人当下状况、创建任务、读新闻、反思或调用工具。要发消息时设置"
+                    "activity=read_chat、chat_action=reply，并填写 reply。"
+                    "此检查没有 QQ 或外部发送权限。"
+                )
+                if soul.store.load_subject().dispatch_epoch != epoch or soul.owner_turns:
+                    self._finish_interrupted(epoch)
+                    return True
+                decision = await soul.life.choose([event], context)
+            except Exception:
+                self._finish_initiative("error", epoch, Activity.REST)
+                raise
+
+            if soul.store.load_subject().dispatch_epoch != epoch or soul.owner_turns:
+                self._finish_interrupted(epoch)
+                return True
+            text = decision.reply.strip()
+            should_speak = (
+                decision.activity == Activity.CHAT
+                and decision.chat_action == "reply"
+                and 0 < len(text) <= 4000
+                and not getattr(decision, "failure", None)
+            )
+            outcome = "message" if should_speak else (
+                "error" if getattr(decision, "failure", None) else "silent"
+            )
+            if should_speak:
+                result = {
+                    "choice": "initiative",
+                    "event_id": event.id,
+                    "activity": Activity.CHAT,
+                    "text": text,
+                    "input": "",
+                }
+                soul.store.record_interaction(
+                    event,
+                    result,
+                    soul._assistant_evidence(event, result),
+                    enqueue=False,
+                )
+            self._finish_initiative(
+                outcome, epoch, Activity.CHAT if should_speak else Activity.REST
+            )
+            return True
+
+    def _finish_initiative(self, outcome, epoch, activity):
+        state = self.soul.store.load_subject()
+        if state.dispatch_epoch != epoch:
+            return
+        state.autonomy_last_result = outcome
+        state.autonomy_last_checked_at = now()
+        state.activity = activity
+        state.rest_until = None
+        self.soul.store.save_transition(epoch, state)
+
+    def _finish_interrupted(self, epoch):
+        state = self.soul.store.load_subject()
+        if state.dispatch_epoch == epoch:
+            return
+        state.autonomy_last_result = "interrupted"
+        state.autonomy_last_checked_at = now()
+        self.soul.store.save_transition(state.dispatch_epoch, state)
 
     async def perform(self, decision, epoch, *, event=None, key=None, feedback=None):
         soul = self.soul

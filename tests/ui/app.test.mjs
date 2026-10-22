@@ -17,7 +17,7 @@ async function until(predicate) {
 async function fixture(chat,modelRequest) {
   const dom=new JSDOM(html,{url:"http://127.0.0.1:8765/#token=fixture-token",runScripts:"outside-only",pretendToBeVisual:true});
   const {window}=dom,document=window.document;
-  const server={state:{fatigue:0,activity:"rest",mode:"normal",model_calls:0,tokens_used:0},limits:{model_calls:100,tokens:50000,context_chars:131072,request_timeout:120},backend:"replay",send_enabled:false,persona:{version:0,public:"A companion",sections:{identity:"identity",relationship:"relationship",redline:"redline",user:"user",world:"world",dream:"dream",dark:"dark",mission:"mission"}},personaHistory:[{version:0,public:"A companion"}],memory:{backend:"local",method:"local lexical",evidence_count:0,pending_mempalace_sync:0,last_context:null},recap:{version:0,text:"",refs:[]},gates:{provider:"deferred",mempalace:"deferred",qq:"deferred",isolation:"disabled"},goals:[],activities:[],interactions:[],drafts:[],effects:[]};
+  const server={state:{fatigue:0,activity:"rest",mode:"normal",autonomy_enabled:true,autonomy_interval_minutes:360,next_initiative_at:null,autonomy_last_checked_at:null,autonomy_last_result:"waiting",model_calls:0,tokens_used:0},limits:{model_calls:100,tokens:50000,context_chars:131072,request_timeout:120},backend:"replay",send_enabled:false,persona:{version:0,public:"A companion",sections:{identity:"identity",relationship:"relationship",redline:"redline",user:"user",world:"world",dream:"dream",dark:"dark",mission:"mission"}},personaHistory:[{version:0,public:"A companion"}],memory:{backend:"local",method:"local lexical",evidence_count:0,pending_mempalace_sync:0,last_context:null},recap:{version:0,text:"",refs:[]},gates:{provider:"deferred",mempalace:"deferred",qq:"deferred",isolation:"disabled"},goals:[],activities:[],interactions:[],drafts:[],effects:[]};
   const sends=[],writes=[],historyReads=[];let pollCallback=()=>{};
   server.model={version:0,mode:"replay",url:"",model:"",key_present:false,source:"runtime",output_token_limit:null,token_budget:50000,context_chars:131072,request_timeout:120};
   window.HTMLDialogElement.prototype.showModal=function(){this.open=true;};
@@ -43,6 +43,9 @@ async function fixture(chat,modelRequest) {
       if(body.expected_version!==server.persona.version)return {ok:false,status:409,json:async()=>({detail:"stale"})};
       server.persona={version:body.expected_version+1,public:body.public,sections:body.sections};server.personaHistory.push({version:server.persona.version,public:body.public});result=server.persona;
     }else if(path==="/api/persona/history"){historyReads.push(path);result=server.personaHistory;
+    }else if(path==="/api/life"){
+      const body=JSON.parse(options.body);writes.push({path,body});
+      server.state={...server.state,...body,next_initiative_at:body.autonomy_enabled?"2026-10-22T12:00:00Z":null};result=server.state;
     }else if(path==="/api/evidence"||path==="/api/recap/history")result=[];
     else if(path.startsWith("/api/memory/search?"))result=[];
     else throw new Error(`Unexpected fixture request: ${path}`);
@@ -76,6 +79,44 @@ test("successive keyboard turns restore the composer without duplicate messages"
     assert.deepEqual(ui.sends,["第一条","第二条"]);
     assert.equal(ui.document.querySelectorAll(".message-turn").length,2);
     assert.equal(ui.document.querySelector(".message-body strong").textContent,"已收到");
+  }finally{ui.close();}
+});
+
+test("main chat shows initiative state and persists its cadence controls",async()=>{
+  const ui=await fixture();
+  try{
+    const d=ui.document;
+    assert.match(d.getElementById("initiative-status").textContent,/自主发起已开启/);
+    d.getElementById("open-settings").click();
+    d.querySelector('[data-setting="life"]').click();
+    assert.ok(d.getElementById("autonomy-enabled"));
+    d.getElementById("autonomy-enabled").checked=false;
+    d.getElementById("autonomy-interval").value="720";
+    d.getElementById("life-form").dispatchEvent(new ui.window.Event("submit",{bubbles:true,cancelable:true}));
+    await until(()=>ui.writes.some(item=>item.path==="/api/life")&&!d.getElementById("life-form").hasAttribute("aria-busy"));
+    assert.equal(ui.writes.at(-1).body.autonomy_enabled,false);
+    assert.equal(ui.writes.at(-1).body.autonomy_interval_minutes,720);
+    assert.match(d.getElementById("initiative-status").textContent,/自主发起已暂停/);
+  }finally{ui.close();}
+});
+
+test("autonomous messages are labeled in the main conversation",async()=>{
+  const ui=await fixture();
+  try{
+    ui.server.interactions.push({event_id:"initiative-1",choice:"initiative",input:"",text:"我想到一个具体建议。"});
+    ui.poll();
+    await until(()=>ui.document.getElementById("turn-initiative-1"));
+    assert.match(ui.document.getElementById("turn-initiative-1").textContent,/主动发起/);
+    assert.match(ui.document.getElementById("turn-initiative-1").textContent,/我想到一个具体建议。/);
+  }finally{ui.close();}
+});
+
+test("main chat reports when an autonomous check completed quietly",async()=>{
+  const ui=await fixture();
+  try{
+    Object.assign(ui.server.state,{autonomy_enabled:true,autonomy_interval_minutes:360,autonomy_last_checked_at:"2026-10-22T11:43:02Z",autonomy_last_result:"silent"});
+    ui.poll();
+    await until(()=>ui.document.getElementById("initiative-status").textContent.includes("上次保持安静"));
   }finally{ui.close();}
 });
 

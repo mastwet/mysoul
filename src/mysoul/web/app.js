@@ -185,6 +185,7 @@ function openSettings(section="general") {
   notice("");selectSetting(section);$("settings-dialog").showModal();refresh();
 }
 $("open-settings").addEventListener("click",()=>openSettings());
+$("initiative-status").addEventListener("click",()=>openSettings("life"));
 $("status-settings").addEventListener("click",()=>openSettings("life"));
 $("fatigue-card").addEventListener("click",()=>$("status-dialog").showModal());
 $("settings-dialog").addEventListener("close",()=>{
@@ -256,7 +257,11 @@ function renderSnapshot(force=false) {
     $(`${id}-meter`).hidden=limit===null;
     $(`${id}-meter`).max=Math.max(1,limit??value);$(`${id}-meter`).value=value;
   }
-  if(!lifeDirty&&!busyScopes.has($("life-form"))){$("mode").value=state.mode;$("fatigue-input").value=percent;$("fatigue-range").value=percent;}
+  if(!lifeDirty&&!busyScopes.has($("life-form"))){$("mode").value=state.mode;$("fatigue-input").value=percent;$("fatigue-range").value=percent;$("autonomy-enabled").checked=state.autonomy_enabled;$("autonomy-interval").value=String(state.autonomy_interval_minutes);}
+  const initiativeHours=Math.round(state.autonomy_interval_minutes/60);
+  const initiativePaused=state.mode!=="normal";
+  const initiativeOutcome={waiting:state.autonomy_last_checked_at?"正在检查":"等待首次检查",silent:"上次保持安静",message:"最近已主动发起",error:"上次检查失败",interrupted:"主人输入打断了检查"}[state.autonomy_last_result]||"等待检查";
+  $("initiative-status").textContent=!state.autonomy_enabled?"自主发起已暂停":initiativePaused?"自主发起暂停 · "+modeNames[state.mode]+"模式":"自主发起已开启 · 每 "+initiativeHours+" 小时 · "+initiativeOutcome;
   $("persona-view").textContent=snapshot.persona.public;
   $("persona-version").textContent=`当前版本 v${snapshot.persona.version} · 私密部分只加入主人上下文`;
   $("recap-version").textContent=`v${snapshot.recap.version}`;
@@ -284,7 +289,7 @@ function renderTurn(item) {
   if(item.input){const user=node("div",undefined,"user-message");const bubble=node("div",undefined,"user-bubble");if(item.choice!=="owner_served"&&!item.pending)bubble.append(node("div","外部消息","source-label"));bubble.append(document.createTextNode(item.input));user.append(bubble);row.append(user);}
   const reply=node("div",undefined,"assistant-message"),meta=node("div",undefined,"assistant-meta");
   meta.append(node("span","m","assistant-mark"),node("strong","mysoul"));
-  if(!["owner_served",undefined].includes(item.choice))meta.append(node("span",{sent:"已发送",draft:"草稿 · 未发送",unknown:"发送结果未知",silent:"阅读 · 保持沉默"}[item.choice]||""));
+  if(!["owner_served",undefined].includes(item.choice))meta.append(node("span",{sent:"已发送",draft:"草稿 · 未发送",unknown:"发送结果未知",silent:"阅读 · 保持沉默",initiative:"主动发起"}[item.choice]||""));
   reply.append(meta);
   if(item.pending){const thinking=node("div",undefined,"thinking");thinking.setAttribute("role","status");thinking.append(node("i"),node("i"),node("i"),node("span","正在回应…"));reply.append(thinking);}
   else if(item.error){
@@ -421,7 +426,8 @@ document.querySelectorAll("[data-prompt]").forEach(el=>el.addEventListener("clic
 bindForm("goal-form",async()=>{await api("goals",{text:$("goal-text").value});$("goal-text").value="";});
 $("mode").addEventListener("change",()=>{lifeDirty=true;$("life-saved").textContent="";});
 for(const id of ["fatigue-input","fatigue-range"]){$(id).addEventListener("input",()=>{lifeDirty=true;$(id==="fatigue-input"?"fatigue-range":"fatigue-input").value=$(id).value;$("life-saved").textContent="";});}
-bindForm("life-form",async()=>{await api("life",{mode:$("mode").value,fatigue:Number($("fatigue-input").value)/100});lifeDirty=false;$("life-saved").textContent="已保存";});
+for(const id of ["mode","autonomy-enabled","autonomy-interval"]){$(id).addEventListener("change",()=>{lifeDirty=true;$("life-saved").textContent="";});}
+bindForm("life-form",async()=>{await api("life",{mode:$("mode").value,fatigue:Number($("fatigue-input").value)/100,autonomy_enabled:$("autonomy-enabled").checked,autonomy_interval_minutes:Number($("autonomy-interval").value)});lifeDirty=false;$("life-saved").textContent="已保存";});
 function syncModelFields(){
   const provider=$("model-mode").value==="provider";
   $("provider-fields").hidden=!provider;$("test-model").hidden=!provider;
