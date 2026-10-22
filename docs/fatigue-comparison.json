@@ -1,0 +1,102 @@
+{
+  "method": "Same eight hourly events, deterministic model, isolated SQLite",
+  "interpretation": "Synthetic scheduling comparison, not an intelligence or fatigue benchmark",
+  "runs": [
+    {
+      "fatigue_enabled": true,
+      "trace": [
+        {
+          "hour": 0,
+          "activity": "work",
+          "fatigue": 0.0
+        },
+        {
+          "hour": 1,
+          "activity": "work",
+          "fatigue": 0.4
+        },
+        {
+          "hour": 2,
+          "activity": "work",
+          "fatigue": 0.8
+        },
+        {
+          "hour": 3,
+          "activity": "rest",
+          "fatigue": 1.0
+        },
+        {
+          "hour": 4,
+          "activity": "work",
+          "fatigue": 0.6
+        },
+        {
+          "hour": 5,
+          "activity": "rest",
+          "fatigue": 1.0
+        },
+        {
+          "hour": 6,
+          "activity": "work",
+          "fatigue": 0.6
+        },
+        {
+          "hour": 7,
+          "activity": "rest",
+          "fatigue": 1.0
+        }
+      ],
+      "model_calls": 10,
+      "reserved_tokens": 10240,
+      "fixture_tasks_completed": 5
+    },
+    {
+      "fatigue_enabled": false,
+      "trace": [
+        {
+          "hour": 0,
+          "activity": "work",
+          "fatigue": 0.0
+        },
+        {
+          "hour": 1,
+          "activity": "work",
+          "fatigue": 0.0
+        },
+        {
+          "hour": 2,
+          "activity": "work",
+          "fatigue": 0.0
+        },
+        {
+          "hour": 3,
+          "activity": "work",
+          "fatigue": 0.0
+        },
+        {
+          "hour": 4,
+          "activity": "work",
+          "fatigue": 0.0
+        },
+        {
+          "hour": 5,
+          "activity": "work",
+          "fatigue": 0.0
+        },
+        {
+          "hour": 6,
+          "activity": "work",
+          "fatigue": 0.0
+        },
+        {
+          "hour": 7,
+          "activity": "work",
+          "fatigue": 0.0
+        }
+      ],
+      "model_calls": 16,
+      "reserved_tokens": 16384,
+      "fixture_tasks_completed": 8
+    }
+  ]
+}

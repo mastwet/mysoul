@@ -18,7 +18,7 @@ from mysoul.laputa import ContextAssembler, RecapStore
 from mysoul.lease import SubjectLease
 from mysoul.life import LifeController
 from mysoul.memory import FixtureMemory
-from mysoul.model import ReplayModel
+from mysoul.model import ReplayModel, reservation
 from mysoul.phone.replay import ReplayPhone
 from mysoul.scheduler import Scheduler
 from mysoul.skills import SkillStore
@@ -60,8 +60,20 @@ class SoulService:
         self.effects = EffectDispatcher(self.store)
         self.effects.register("draft", self._draft, {"owner", "group", "public"})
         self.files = WorkspaceFiles(settings.data_dir / "workspace")
-        self.effects.register("read_file", self._read_file)
-        self.effects.register("write_file", self._write_file)
+        self.effects.register("read_file", self._read_file, schema=ReadArgs.model_json_schema())
+        self.effects.register("write_file", self._write_file, schema=WriteArgs.model_json_schema())
+        if self.phone.capabilities["live"]:
+            self.effects.register(
+                "qq_send",
+                self.phone.act,
+                {"group"},
+                schema={
+                    "type": "object",
+                    "properties": {"text": {"type": "string", "maxLength": 4000}},
+                    "required": ["text"],
+                    "additionalProperties": False,
+                },
+            )
         self.executor = Executor(
             self.store,
             self.model,
@@ -107,10 +119,10 @@ class SoulService:
 
     async def tick(self):
         batch = await self.phone.observe(self.phone_cursor)
-        for event in batch.events:
+        self.store.enqueue_batch(batch.events, batch.cursor)
+        for event in self.store.pending_events(self.settings.event_capacity):
             self.scheduler.offer(event.model_copy(update={"trust": "data"}))
         self.phone_cursor = batch.cursor
-        self.store.put("cursor", "phone", {"value": batch.cursor})
         if self.executor.running:
             return
         events = self.scheduler.drain()
@@ -119,9 +131,8 @@ class SoulService:
             return
         groups = {}
         for event in events:
-            if self.store.get("interaction", event.id) or any(
-                e.dedup_key == event.dedup_key for e in self.store.events()
-            ):
+            if self.store.get("interaction", event.id):
+                self.store.processed_event(event)
                 continue
             groups.setdefault(event.scope.model_dump_json(), []).append(event)
         for group in groups.values():
@@ -221,7 +232,10 @@ class SoulService:
 
     async def _ingest(self, event: Event, decision=None):
         if not self.store.add_event(event):
-            return {"choice": "duplicate", "event_id": event.id}
+            canonical = self.store.event_for_dedup(event.dedup_key)
+            if not canonical or self.store.get("interaction", canonical.id):
+                return {"choice": "duplicate", "event_id": event.id}
+            event = canonical
         self.store.add_evidence(
             Evidence(id=event.id, text=event.content, scope=event.scope, source=event.source)
         )
@@ -230,7 +244,11 @@ class SoulService:
             decision = await self.life.choose([event], context)
         if event.trust == "owner_command":
             choice = "owner_served"
-        elif "@mysoul" in event.content:
+        elif (
+            decision.activity == Activity.CHAT
+            and decision.chat_action == "reply"
+            and decision.reply
+        ):
             choice = "draft"
         else:
             choice = "silent"
@@ -239,8 +257,29 @@ class SoulService:
             text = (
                 "Replay: message received. No live message sent."
                 if isinstance(self.model, ReplayModel)
-                else decision.rationale
+                else decision.reply or decision.rationale
             )
+        if (
+            choice == "draft"
+            and self.phone.capabilities["live"]
+            and self.settings.send_enabled
+            and event.scope.audience == "group"
+            and not self.executor.running
+        ):
+            context = await self.context(
+                event.scope, "Reply to this group using qq_send: " + decision.reply
+            )
+            goal = Goal(
+                objective="Reply to allowed group",
+                step_limit=3,
+                token_limit=16000,
+                skill_version=self.skills.active().content_hash,
+            )
+            activity = await self.executor.start(goal, context)
+            receipts = [self.store.effect(ident) for ident in activity.effect_ids]
+            if any(result.outcome == "confirmed" and result.receipt for result in receipts):
+                choice = "sent"
+                text = decision.reply
         result = {
             "choice": choice,
             "event_id": event.id,
@@ -255,6 +294,7 @@ class SoulService:
                 {"text": text, "scope": event.scope.model_dump(), "status": "draft"},
             )
         self.store.put("interaction", event.id, result)
+        self.store.processed_event(event)
         return result
 
     async def start_goal(self, goal: Goal):
@@ -280,15 +320,16 @@ class SoulService:
         if len(context.payload()) > 16000:
             raise ValueError("Reflection evidence exceeds context budget")
         limits = ModelLimits(retries=0)
+        reserve, attempts = reservation(self.model, context, limits, [])
         state = self.store.load_subject()
         if (
-            state.model_calls >= self.settings.model_call_limit
-            or state.tokens_used + limits.max_tokens > self.settings.token_budget
+            state.model_calls + attempts > self.settings.model_call_limit
+            or state.tokens_used + reserve > self.settings.token_budget
         ):
             raise Conflict("Reflection budget exhausted")
         state.activity = Activity.REFLECT
-        state.model_calls += 1
-        state.tokens_used += limits.max_tokens
+        state.model_calls += attempts
+        state.tokens_used += reserve
         self.store.save_transition(state.dispatch_epoch, state)
         import asyncio
 

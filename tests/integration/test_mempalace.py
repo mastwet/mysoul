@@ -54,6 +54,22 @@ def test_mcp_missing_schema_fails_explicitly(tmp_path):
     store.close()
 
 
+def test_process_settings_bind_actual_data_and_embedding(tmp_path):
+    from mysoul.mempalace import ProcessConfig
+
+    config = ProcessConfig(
+        command="python",
+        args=["-m", "mempalace.mcp_server"],
+        source_dir=tmp_path / "upstream",
+        data_dir=tmp_path / "memory",
+        embedding_model="embeddinggemma",
+    )
+    env = config.process_environment()
+    assert env["MEMPALACE_PALACE_PATH"] == str((tmp_path / "memory/palace").resolve())
+    assert env["MEMPALACE_EMBEDDING_MODEL"] == "embeddinggemma"
+    assert env["MEMPALACE_CONFIG_DIR"] == str((tmp_path / "memory/config").resolve())
+
+
 @pytest.mark.mempalace
 async def test_real_mempalace_chinese_restart(tmp_path):
     config = os.environ.get("MYSOUL_MEMPALACE_CONFIG")

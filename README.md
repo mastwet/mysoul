@@ -4,13 +4,34 @@ An experimental, single-subject Python companion inspired by Project VIVY: auton
 
 ## Status
 
-Planning only. No application implementation, installation, live integration, or test pass is claimed yet.
+The local offline implementation is available: durable life state, finite LangGraph tasks,
+source-scoped Recap/memory, replay and NapCat adapters, bounded file work, reviewed skill
+evolution, and a local operator UI. Real provider, full MemPalace and authorized QQ
+acceptance remain pending. Arbitrary code execution is disabled.
 
-## Planning documents
+```powershell
+uv sync --locked --extra dev
+uv run python -m mysoul serve
+```
+
+Open the local access URL printed by the command. Defaults use deterministic replay;
+no credentials or QQ account are needed. See [operations and recovery](docs/runbook.md)
+for a file-work demonstration, real integration setup and recovery procedures.
+
+```powershell
+uv run python -m mysoul replay --trace tests/fixtures/life_trace.jsonl --data-dir .local/replay-demo
+uv run ruff check .
+uv run pytest -m 'not live and not mempalace and not isolation' -q
+```
+
+## Design and verification
 
 - [Implementation plan](docs/PLAN.md): architecture contracts, dependency order, implementation tasks, test gates, and operational setup.
 - [Architecture decisions](docs/DECISIONS.md): choices, tradeoffs, scope boundaries, and settings to validate.
+- [Validation record](docs/validation.md): actual tests, browser walkthrough and pending gates.
+- [Paired fatigue trace](docs/fatigue-comparison.json): measured synthetic scheduling comparison.
 
 The planned stack is Python, LangGraph OSS, SQLite, a thin LAPUTA layer, upstream MemPalace, and a PEN-style interface with NapCatQQ and replay backends. Skill evolution follows evidence, reflection, isolated tests, human review, activation, and rollback.
 
-Start with the offline scaffold and replay lane. Real provider, MemPalace, and authorized QQ checks have separate validation gates. Do not treat this repository or its plans as permission to deploy, configure credentials, or send live messages.
+Real provider, MemPalace, and authorized QQ checks have separate validation gates.
+The plans and offline tests do not authorize deployment, account configuration or live messages.

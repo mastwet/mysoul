@@ -68,6 +68,8 @@ class ActivityDecision(Contract):
     rationale: str = Field(default="", max_length=1000)
     goal_id: str | None = None
     rest_until: AwareDatetime | None = None
+    chat_action: Literal["read", "silent", "reply"] = "silent"
+    reply: str = Field(default="", max_length=4000)
 
 
 GoalStatus = Literal[
@@ -171,7 +173,7 @@ class ContextBundle(Contract):
 class ModelLimits(Contract):
     max_tokens: int = Field(default=1024, ge=1)
     timeout: float = Field(default=30, gt=0)
-    retries: int = Field(default=1, ge=0, le=3)
+    retries: int = Field(default=0, ge=0, le=3)
 
 
 class StepDecision(Contract):

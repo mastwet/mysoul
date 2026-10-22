@@ -7,9 +7,10 @@ from mysoul.domain import (
     ContextBundle,
     Event,
     ModelLimits,
+    Scope,
     now,
 )
-from mysoul.model import ModelAdapter
+from mysoul.model import ModelAdapter, reservation
 from mysoul.storage import StateStore
 
 
@@ -35,10 +36,16 @@ class LifeController:
             state.updated_at = self.clock()
             owner = any(e.trust == "owner_command" for e in events)
             limits = ModelLimits()
+            if context is None:
+                scope = events[0].scope if events else Scope()
+                context = ContextBundle(
+                    scope=scope, task="\n".join(e.content for e in events if scope.admits(e.scope))
+                )
+            reserve, attempts = reservation(self.model, context, limits)
             blocked = (
                 not events
-                or state.model_calls >= self.settings.model_call_limit
-                or state.tokens_used + limits.max_tokens > self.settings.token_budget
+                or state.model_calls + attempts > self.settings.model_call_limit
+                or state.tokens_used + reserve > self.settings.token_budget
                 or (state.fatigue >= 0.9 and not owner)
             )
             if blocked:
@@ -46,15 +53,9 @@ class LifeController:
                 self.store.save_transition(state.dispatch_epoch, state)
                 return ActivityDecision(activity=Activity.REST, rationale="Rest or runtime limit")
             # Reserve maximum output tokens before inference, including failed requests.
-            state.model_calls += 1
-            state.tokens_used += limits.max_tokens
+            state.model_calls += attempts
+            state.tokens_used += reserve
             self.store.save_transition(state.dispatch_epoch, state)
-            if context is None:
-                scope = events[0].scope
-                context = ContextBundle(
-                    scope=scope,
-                    task="\n".join(e.content for e in events if scope.admits(e.scope)),
-                )
             try:
                 decision = await asyncio.wait_for(
                     self.model.decide(context, limits), limits.timeout

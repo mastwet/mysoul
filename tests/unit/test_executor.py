@@ -146,3 +146,23 @@ async def test_goal_step_limit_and_skill_context(rig):
     )
     assert store.goal(activity.goal_id).status == "failed"
     assert "verify" in model.payloads[0]
+
+
+async def test_interrupted_inference_charges_elapsed_time(rig):
+    store, _, model, executor = rig
+    entered, release = asyncio.Event(), asyncio.Event()
+    original = model.execute_step
+
+    async def delayed(*args):
+        entered.set()
+        await release.wait()
+        return await original(*args)
+
+    model.execute_step = delayed
+    goal = Goal(objective="charge interrupted work")
+    task = asyncio.create_task(executor.start(goal))
+    await entered.wait()
+    await executor.interrupt(Event(dedup_key="owner-time", trust="owner_command"))
+    release.set()
+    await task
+    assert store.goal(goal.id).elapsed_seconds > 0

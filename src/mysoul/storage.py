@@ -88,6 +88,44 @@ class StateStore:
                 for r in self.db.execute("SELECT body FROM events ORDER BY rowid")
             ]
 
+    def enqueue_batch(self, events: list[Event], cursor: str):
+        with self.transaction() as db:
+            for event in events:
+                db.execute(
+                    "INSERT OR IGNORE INTO events VALUES(?,?,?)",
+                    (event.id, event.dedup_key, event.model_dump_json()),
+                )
+                canonical = db.execute(
+                    "SELECT body FROM events WHERE dedup=?", (event.dedup_key,)
+                ).fetchone()
+                if canonical:
+                    db.execute(
+                        "INSERT OR IGNORE INTO inbox(dedup,body) VALUES(?,?)",
+                        (event.dedup_key, canonical[0]),
+                    )
+            db.execute(
+                "INSERT OR REPLACE INTO objects VALUES('cursor','phone',?)",
+                (json.dumps({"value": cursor}),),
+            )
+
+    def pending_events(self, limit=256):
+        with self.lock:
+            return [
+                Event.model_validate_json(row[0])
+                for row in self.db.execute(
+                    "SELECT body FROM inbox WHERE status='pending' ORDER BY rowid LIMIT ?", (limit,)
+                )
+            ]
+
+    def processed_event(self, event):
+        with self.transaction() as db:
+            db.execute("UPDATE inbox SET status='processed' WHERE dedup=?", (event.dedup_key,))
+
+    def event_for_dedup(self, dedup):
+        with self.lock:
+            row = self.db.execute("SELECT body FROM events WHERE dedup=?", (dedup,)).fetchone()
+            return Event.model_validate_json(row[0]) if row else None
+
     def get(self, kind: str, ident: str):
         with self.lock:
             row = self.db.execute(

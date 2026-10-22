@@ -114,6 +114,22 @@ class ProcessConfig(Contract):
     embedding_model: str
     env: dict[str, str] = {}
 
+    def process_environment(self):
+        env = {
+            k: v
+            for k, v in os.environ.items()
+            if k.upper() in {"PATH", "SYSTEMROOT", "TEMP", "TMP"}
+        }
+        env.update(self.env)
+        env.update(
+            {
+                "MEMPALACE_PALACE_PATH": str((self.data_dir / "palace").resolve()),
+                "MEMPALACE_CONFIG_DIR": str((self.data_dir / "config").resolve()),
+                "MEMPALACE_EMBEDDING_MODEL": self.embedding_model,
+            }
+        )
+        return env
+
 
 class MemPalaceProcess:
     def __init__(self, config: ProcessConfig, store):
@@ -143,12 +159,7 @@ class MemPalaceProcess:
         if fingerprint.exists() and json.loads(fingerprint.read_text()) != identity:
             raise MemoryUnavailable("Index identity changed; explicit migration/reindex required")
         fingerprint.write_text(json.dumps(identity), encoding="utf-8")
-        env = {
-            k: v
-            for k, v in os.environ.items()
-            if k.upper() in {"PATH", "SYSTEMROOT", "TEMP", "TMP", "USERPROFILE"}
-        }
-        env.update(config.env)
+        env = config.process_environment()
         self.stack = AsyncExitStack()
         try:
             streams = await self.stack.enter_async_context(

@@ -532,6 +532,7 @@ source = { editable = "." }
 dependencies = [
     { name = "fastapi" },
     { name = "httpx" },
+    { name = "jsonschema" },
     { name = "langgraph" },
     { name = "langgraph-checkpoint-sqlite" },
     { name = "mcp" },
@@ -550,6 +551,7 @@ dev = [
 requires-dist = [
     { name = "fastapi", specifier = ">=0.115,<1" },
     { name = "httpx", specifier = ">=0.28,<1" },
+    { name = "jsonschema", specifier = ">=4.20,<5" },
     { name = "langgraph", specifier = ">=1,<2" },
     { name = "langgraph-checkpoint-sqlite", specifier = ">=3,<4" },
     { name = "mcp", specifier = ">=1.12,<2" },

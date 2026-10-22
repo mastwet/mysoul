@@ -90,3 +90,28 @@ async def test_real_provider_contract():
         assert result.activity
     finally:
         await model.close()
+
+
+async def test_prompt_and_schema_are_reserved_before_network_call(tmp_path):
+    from mysoul.config import Settings
+    from mysoul.domain import Event
+    from mysoul.life import LifeController
+    from mysoul.storage import StateStore
+
+    calls = []
+
+    def handler(request):
+        calls.append(1)
+        return httpx.Response(
+            200, json={"choices": [{"message": {"content": '{"activity":"rest"}'}}]}
+        )
+
+    model = OpenAICompatibleModel(
+        "https://provider.test/v1", "id", "key", transport=httpx.MockTransport(handler)
+    )
+    store = StateStore(tmp_path / "s.db")
+    life = LifeController(store, model, Settings(token_budget=1200))
+    await life.choose([Event(content="x" * 3000, dedup_key="e")])
+    assert calls == []
+    await model.close()
+    store.close()

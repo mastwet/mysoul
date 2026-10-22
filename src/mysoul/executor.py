@@ -20,6 +20,7 @@ from mysoul.domain import (
     ToolRequest,
     now,
 )
+from mysoul.model import reservation
 from mysoul.storage import Conflict
 
 
@@ -69,7 +70,9 @@ class Executor:
         decision = await asyncio.wait_for(
             self.model.execute_step(
                 ContextBundle.model_validate(state["context"]),
-                [{"name": name} for name in self.dispatcher.handlers],
+                self.dispatcher.tool_specs(
+                    ContextBundle.model_validate(state["context"]).scope.audience
+                ),
                 limits,
             ),
             limits.timeout,
@@ -132,24 +135,37 @@ class Executor:
                     or goal.tokens_used >= goal.token_limit
                 ):
                     return self._finish(activity, "failed")
-                state = self.store.load_subject()
-                reserve = min(1024, goal.token_limit - goal.tokens_used)
-                if (
-                    state.model_calls >= self.settings.model_call_limit
-                    or state.tokens_used + reserve > self.settings.token_budget
-                ):
-                    return self._finish(activity, "suspended")
                 config = {"configurable": {"thread_id": activity.id}}
                 snapshot = await self.graph.aget_state(config)
                 if not (snapshot.next and snapshot.values.get("cursor") == activity.cursor):
-                    state.model_calls += 1
+                    state = self.store.load_subject()
+                    latest = self.store.activity(activity.id)
+                    if latest.status != "active" or latest.dispatch_epoch != state.dispatch_epoch:
+                        return latest
+                    limits = ModelLimits(
+                        max_tokens=min(1024, goal.token_limit - goal.tokens_used),
+                        timeout=min(30, goal.time_limit - goal.elapsed_seconds),
+                    )
+                    context = ContextBundle.model_validate(
+                        self.store.get("activity_context", activity.id)
+                    )
+                    reserve, attempts = reservation(
+                        self.model,
+                        context,
+                        limits,
+                        self.dispatcher.tool_specs(context.scope.audience),
+                    )
+                    if (
+                        state.model_calls + attempts > self.settings.model_call_limit
+                        or state.tokens_used + reserve > self.settings.token_budget
+                        or goal.tokens_used + reserve > goal.token_limit
+                    ):
+                        return self._finish(activity, "suspended")
+                    state.model_calls += attempts
                     state.tokens_used += reserve
                     self.store.save_transition(state.dispatch_epoch, state)
                     goal.tokens_used += reserve
                     self.store.save_goal(goal)
-                    limits = ModelLimits(
-                        max_tokens=reserve, timeout=min(30, goal.time_limit - goal.elapsed_seconds)
-                    )
                     await self.graph.ainvoke(
                         {
                             "activity_id": activity.id,
@@ -161,11 +177,17 @@ class Executor:
                         config,
                     )
                 latest = self.store.activity(activity.id)
+                goal = self.store.goal(activity.goal_id)
+                goal.elapsed_seconds += monotonic() - started
+                started = monotonic()
+                self.store.save_goal(goal)
                 if (
                     latest.status != "active"
                     or self.store.load_subject().dispatch_epoch != latest.dispatch_epoch
                 ):
                     return latest
+                if goal.elapsed_seconds >= goal.time_limit:
+                    return self._finish(latest, "failed")
                 output = await self.graph.ainvoke(None, config)
                 latest = self.store.activity(activity.id)
                 goal = self.store.goal(activity.goal_id)
@@ -210,6 +232,9 @@ class Executor:
             self._finish(self.store.activity(activity_id), "failed")
             raise
         finally:
+            goal = self.store.goal(self.store.activity(activity_id).goal_id)
+            goal.elapsed_seconds += max(0, monotonic() - started)
+            self.store.save_goal(goal)
             self.running = None
 
     def _finish(self, activity, status):

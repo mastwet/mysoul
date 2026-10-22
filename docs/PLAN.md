@@ -1,5 +1,8 @@
 # mysoul Implementation Plan
 
+Implementation progress is recorded in [validation.md](validation.md). The original checklist
+below is the design baseline, not a claim that all optional live gates have passed.
+
 > Implementation guidance: work task-by-task with independent review at phase gates. Do not treat this plan as permission for live deployment or external messaging.
 
 **Goal:** Build a small, independent Python experiment in which one enduring subject chooses how to spend time, remembers sources, finishes bounded work, handles interruption honestly, and improves reviewed skills.

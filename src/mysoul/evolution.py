@@ -16,6 +16,8 @@ class ProcedureReplayModel(ReplayModel):
     """
 
     async def execute_step(self, context, tool_specs, limits):
+        if "[reflection]" in context.instructions:
+            return await super().execute_step(context, tool_specs, limits)
         self.calls += 1
         self.payloads.append(context.payload())
         tools = [e.source for e in context.step_results]

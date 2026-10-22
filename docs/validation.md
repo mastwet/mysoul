@@ -48,3 +48,12 @@ All results are local development evidence, not live deployment claims.
 - RED: API absent; runtime environment/tick/lease tests failed before implementation. GREEN: 5 API and 3 runtime tests passed.
 - Browser walkthrough on the actual local server: authenticated chat; whole Recap edit/save (v1); evidence-driven reflection; candidate objective test; operator approval/activation; rollback; finite task completion.
 - UI uses the existing application services. Edit conflicts preserve the form and its original base revision.
+
+## T10 acceptance before independent review
+- Four-chain test passed: owner event, bounded artifact, failure evidence, reflection, isolated candidate, approval, next-task verification, rollback and restart/source retrieval.
+- Added regressions for durable inbox restart, burst coalescing, actual opt-in group dispatch through fixture HTTP, prompt/schema budget reservation and elapsed time on interrupted inference.
+- Full suite: 83 passed, 6 skipped. Skips: real provider (1), real MemPalace (1), unavailable isolation backend (4). No live QQ call was made.
+- Ruff passed. Wheel built and all five required SQL/Markdown/Web resources verified. CLI replay produced silent/draft outcomes.
+- Paired fatigue experiment is in fatigue-comparison.json; it uses identical simulated events and deterministic fixture tasks, not human-fatigue or intelligence measurements.
+- Initial skill Markdown is packaged under src/mysoul/builtin/work.md so installed wheels retain the authoritative baseline. Runtime revisions stay in .local/skill-revisions.
+- Milestone: offline implementation available; real integration pending. Independent code review follows.

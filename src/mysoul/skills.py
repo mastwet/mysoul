@@ -7,9 +7,7 @@ from pathlib import Path
 from mysoul.domain import SkillProposal, SkillVersion
 from mysoul.storage import Conflict
 
-INITIAL_SKILL = (
-    "# Work\nProcedure: draft\nProduce a bounded artifact. Report limitations honestly.\n"
-)
+INITIAL_SKILL = (Path(__file__).parent / "builtin/work.md").read_text(encoding="utf-8")
 
 
 def digest(text):

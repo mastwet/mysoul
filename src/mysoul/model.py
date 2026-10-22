@@ -12,6 +12,16 @@ class ModelAdapter(Protocol):
     ) -> StepDecision: ...
 
 
+def reservation(model, context, limits, tool_specs=None):
+    estimate = getattr(model, "reservation", None)
+    tokens = (
+        estimate(context, limits, tool_specs)
+        if estimate
+        else limits.max_tokens * (limits.retries + 1)
+    )
+    return tokens, limits.retries + 1
+
+
 class ReplayModel:
     """Deterministic offline model; no network or external-effect capability."""
 
@@ -27,7 +37,12 @@ class ReplayModel:
         if self.decisions:
             return self.decisions.popleft()
         activity = Activity.CHAT if context.task else Activity.REST
-        return ActivityDecision(activity=activity, rationale="Deterministic replay policy")
+        return ActivityDecision(
+            activity=activity,
+            rationale="Deterministic replay policy",
+            chat_action="reply" if "@mysoul" in context.task else "silent",
+            reply="Replay draft: message received." if "@mysoul" in context.task else "",
+        )
 
     async def execute_step(
         self, context: ContextBundle, tool_specs: list[dict], limits: ModelLimits

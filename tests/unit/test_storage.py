@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 import pytest
 from pydantic import ValidationError
 
-from mysoul.domain import Event, Goal, LifeState
+from mysoul.domain import Activity, Event, Goal, LifeState
 from mysoul.storage import Conflict, StateStore
 
 
@@ -22,7 +22,7 @@ def test_stale_epoch_rejected(tmp_path):
     state.dispatch_epoch = 1
     store.save_transition(0, state)
     with pytest.raises(Conflict):
-        store.save_transition(0, state.model_copy(update={"activity": "work"}))
+        store.save_transition(0, state.model_copy(update={"activity": Activity.WORK}))
     assert store.load_subject().activity == "rest"
     store.close()
 

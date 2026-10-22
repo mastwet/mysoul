@@ -10,13 +10,20 @@ class EffectDispatcher:
         self.store, self.clock = store, clock
         self.handlers: dict[str, Callable[[ToolRequest], Awaitable[ToolResult]]] = {}
         self.audiences: dict[str, set[str]] = {}
+        self.specifications: dict[str, dict] = {}
         self.lock = asyncio.Lock()
 
-    def register(self, name: str, handler, audiences=None):
+    def register(self, name: str, handler, audiences=None, schema=None):
         if name in self.handlers:
             raise Conflict("Tool already registered")
         self.handlers[name] = handler
         self.audiences[name] = audiences or {"owner"}
+        self.specifications[name] = {"name": name, "parameters": schema or {"type": "object"}}
+
+    def tool_specs(self, audience):
+        return [
+            spec for name, spec in self.specifications.items() if audience in self.audiences[name]
+        ]
 
     async def dispatch(self, request: ToolRequest) -> ToolResult:
         async with self.lock:
