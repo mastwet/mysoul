@@ -211,26 +211,30 @@ class ActivityRouter:
             try:
                 context = await soul.context(
                     Scope(),
-                    "[main-chat initiative]\nCheck whether one brief, useful message belongs "
-                    "in the owner's main chat now.",
+                    "[main-chat initiative]\nReview recent owner messages for an active "
+                    "follow-up request or one concrete useful message.",
                 )
                 context.instructions += (
-                    "\n[自主主聊天] 这是低频私聊检查。只可依据主人消息、已确认记忆和公开人格，"
-                    "在确有具体价值时主动发一条简短消息；否则选择休息。不要泛泛问候、"
-                    "臆测主人当下状况、创建任务、读新闻、反思或调用工具。要发消息时设置"
-                    "activity=read_chat、chat_action=reply，并填写 reply。"
-                    "此检查没有 QQ 或外部发送权限。"
+                    "\n[自主主聊天] 这是低频的主人私聊检查。"
+                    "只可依据主人消息、已确认记忆和公开人格。"
+                    "先检查最近对话里是否有主人要求之后继续的持续请求（例如‘继续写，除非我叫停’）。"
+                    "若有且后续没有主人暂停、取消或改口，就按原主题和要求推进下一段；一次只完成一个"
+                    "有界部分，最多4000字符。不要把‘待会’或已经完成过一次回复当作授权失效。"
+                    "主人明确停止或暂停时必须服从。没有仍然有效的持续请求时，只有确有具体价值才发一条"
+                    "简短消息，否则选择休息。不要泛泛问候、臆测主人当下状况、创建任务、读新闻、反思或"
+                    "调用工具。要发消息时设置activity=read_chat、chat_action=reply，并填写reply。"
+                    "此检查没有QQ或外部发送权限。"
                 )
-                if soul.store.load_subject().dispatch_epoch != epoch or soul.owner_turns:
-                    self._finish_interrupted(epoch)
+                if not self._initiative_still_current(epoch):
                     return True
                 decision = await soul.life.choose([event], context)
             except Exception:
+                if not self._initiative_still_current(epoch):
+                    return True
                 self._finish_initiative("error", epoch, Activity.REST)
                 raise
 
-            if soul.store.load_subject().dispatch_epoch != epoch or soul.owner_turns:
-                self._finish_interrupted(epoch)
+            if not self._initiative_still_current(epoch):
                 return True
             text = decision.reply.strip()
             should_speak = (
@@ -278,6 +282,18 @@ class ActivityRouter:
         state.autonomy_last_result = "interrupted"
         state.autonomy_last_checked_at = now()
         self.soul.store.save_transition(state.dispatch_epoch, state)
+
+    def _initiative_still_current(self, epoch):
+        state = self.soul.store.load_subject()
+        if state.dispatch_epoch != epoch or self.soul.owner_turns:
+            self._finish_interrupted(epoch)
+            return False
+        if not state.autonomy_enabled or state.mode != "normal":
+            state.autonomy_last_result = "paused"
+            state.autonomy_last_checked_at = now()
+            self.soul.store.save_transition(epoch, state)
+            return False
+        return True
 
     async def perform(self, decision, epoch, *, event=None, key=None, feedback=None):
         soul = self.soul

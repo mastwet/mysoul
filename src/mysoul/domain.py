@@ -66,7 +66,7 @@ class LifeState(Contract):
     next_initiative_at: AwareDatetime | None = None
     autonomy_last_checked_at: AwareDatetime | None = None
     autonomy_last_result: Literal[
-        "waiting", "silent", "message", "error", "interrupted"
+        "waiting", "silent", "message", "error", "interrupted", "paused"
     ] = "waiting"
 
 

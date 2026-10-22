@@ -215,6 +215,8 @@ async function refresh() {
     try{
       snapshot=await api("status");
       $("connection").textContent="已连接 · 本机";document.querySelector(".connection-dot").classList.remove("offline");
+      const previousNotice=$("notice-text").textContent||$("settings-feedback").textContent;
+      if(previousNotice.startsWith("连接中断"))notice("");
       renderSnapshot();
       if(requestedView==="memory"){
         const [evidence,history,personaHistory]=await Promise.all([api("evidence"),api("recap/history"),api("persona/history")]);
@@ -259,9 +261,9 @@ function renderSnapshot(force=false) {
   }
   if(!lifeDirty&&!busyScopes.has($("life-form"))){$("mode").value=state.mode;$("fatigue-input").value=percent;$("fatigue-range").value=percent;$("autonomy-enabled").checked=state.autonomy_enabled;$("autonomy-interval").value=String(state.autonomy_interval_minutes);}
   const initiativeHours=Math.round(state.autonomy_interval_minutes/60);
-  const initiativePaused=state.mode!=="normal";
-  const initiativeOutcome={waiting:state.autonomy_last_checked_at?"正在检查":"等待首次检查",silent:"上次保持安静",message:"最近已主动发起",error:"上次检查失败",interrupted:"主人输入打断了检查"}[state.autonomy_last_result]||"等待检查";
-  $("initiative-status").textContent=!state.autonomy_enabled?"自主发起已暂停":initiativePaused?"自主发起暂停 · "+modeNames[state.mode]+"模式":"自主发起已开启 · 每 "+initiativeHours+" 小时 · "+initiativeOutcome;
+  const initiativeOutcome={waiting:state.autonomy_last_checked_at?"正在检查":"等待首次检查",silent:"上次保持安静",message:"最近已主动发起",error:"上次检查失败",interrupted:"主人输入打断了检查",paused:"设置变化后已停止"}[state.autonomy_last_result]||"等待检查";
+  let initiativePauseReason=state.mode!=="normal"?modeNames[state.mode]+"模式":state.fatigue>=.9?"疲劳过高":state.model_calls>=limits.model_calls?"调用预算已用尽":limits.tokens!==null&&limits.tokens!==undefined&&state.tokens_used>=limits.tokens?"Token预算已用尽":"";
+  $("initiative-status").textContent=!state.autonomy_enabled?"自主发起已暂停 · "+initiativeOutcome:initiativePauseReason?"自主发起暂停 · "+initiativePauseReason+" · "+initiativeOutcome:"自主发起已开启 · 每 "+initiativeHours+" 小时 · "+initiativeOutcome;
   $("persona-view").textContent=snapshot.persona.public;
   $("persona-version").textContent=`当前版本 v${snapshot.persona.version} · 私密部分只加入主人上下文`;
   $("recap-version").textContent=`v${snapshot.recap.version}`;

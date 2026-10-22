@@ -120,6 +120,35 @@ test("main chat reports when an autonomous check completed quietly",async()=>{
   }finally{ui.close();}
 });
 
+test("main chat explains fatigue and exhausted budget pauses",async()=>{
+  const ui=await fixture();
+  try{
+    Object.assign(ui.server.state,{autonomy_enabled:true,fatigue:.95});
+    ui.poll();
+    await until(()=>ui.document.getElementById("initiative-status").textContent.includes("疲劳"));
+    Object.assign(ui.server.state,{fatigue:0,tokens_used:50000});
+    ui.poll();
+    await until(()=>ui.document.getElementById("initiative-status").textContent.includes("预算"));
+  }finally{ui.close();}
+});
+
+test("successful reconnection clears a stale connection notice",async()=>{
+  const ui=await fixture();
+  try{
+    const fetch=ui.window.fetch;
+    ui.window.fetch=async(path,options)=>{
+      if(path==="/api/status")throw new Error("offline");
+      return fetch(path,options);
+    };
+    ui.poll();
+    await until(()=>ui.document.getElementById("notice-text").textContent.includes("连接中断"));
+    ui.window.fetch=fetch;
+    ui.poll();
+    await until(()=>ui.document.getElementById("connection").textContent==="已连接 · 本机");
+    assert.equal(ui.document.getElementById("notice").hidden,true);
+  }finally{ui.close();}
+});
+
 test("model settings test without activation then save the configured provider",async()=>{
   const requests=[];
   const ui=await fixture(null,async(path,body)=>requests.push({path,body}));

@@ -3,7 +3,7 @@ from datetime import timedelta
 import pytest
 
 from mysoul.config import Settings
-from mysoul.domain import Activity, ActivityDecision, Scope, now
+from mysoul.domain import Activity, ActivityDecision, Event, Scope, now
 from mysoul.model import ReplayModel
 from mysoul.service import SoulService
 
@@ -116,3 +116,104 @@ async def test_owner_input_interrupts_initiative_without_a_late_message(tmp_path
             item for item in soul.status()["interactions"] if item["choice"] == "initiative"
         ]
         assert soul.store.load_subject().autonomy_last_result == "interrupted"
+
+
+async def test_initiative_honors_an_unrevoked_owner_followup_request(tmp_path):
+    class ContinuingRequestModel(InitiativeModel):
+        async def decide(self, context, limits):
+            self.calls += 1
+            self.contexts.append(context.model_copy(deep=True))
+            if "[main-chat initiative]" not in context.task:
+                return ActivityDecision(activity=Activity.REST)
+            has_followup = any(
+                message.role == "user" and "除非我叫停" in message.content
+                for message in context.history
+            )
+            if has_followup and "仍然有效的持续请求" in context.instructions:
+                return ActivityDecision(
+                    activity=Activity.CHAT,
+                    chat_action="reply",
+                    reply="林先生把那枚青铜齿轮放到灯下，发现齿背刻着一行细字……",
+                )
+            return ActivityDecision(activity=Activity.REST)
+
+    model = ContinuingRequestModel()
+    async with SoulService(Settings(data_dir=tmp_path), model=model) as soul:
+        owner_request = Event(
+            source="local-owner",
+            sender="owner",
+            content="接着写这个故事，除非我叫停，否则之后继续写。",
+            trust="owner_command",
+            dedup_key="owner-followup-request",
+        )
+        soul.store.add_event(owner_request)
+        prior_reply = {
+            "choice": "owner_served",
+            "event_id": owner_request.id,
+            "activity": Activity.CHAT,
+            "text": "我会在之后继续写。",
+            "input": owner_request.content,
+        }
+        soul.store.record_interaction(
+            owner_request,
+            prior_reply,
+            soul._assistant_evidence(owner_request, prior_reply),
+            enqueue=False,
+        )
+        state = soul.store.load_subject()
+        state.autonomy_enabled = True
+        state.next_initiative_at = now() - timedelta(seconds=1)
+        soul.store.save_transition(state.dispatch_epoch, state)
+
+        await soul.activities.idle()
+
+        messages = [
+            item for item in soul.status()["interactions"] if item["choice"] == "initiative"
+        ]
+        assert len(messages) == 1
+        assert "青铜齿轮" in messages[0]["text"]
+        assert soul.store.load_subject().autonomy_last_result == "message"
+
+
+@pytest.mark.parametrize("change", ["disable", "quiet_mode"])
+async def test_runtime_pause_during_a_check_suppresses_its_reply(tmp_path, change):
+    import asyncio
+
+    entered, release = asyncio.Event(), asyncio.Event()
+
+    class DelayedInitiativeModel(InitiativeModel):
+        async def decide(self, context, limits):
+            self.calls += 1
+            self.contexts.append(context.model_copy(deep=True))
+            if "[main-chat initiative]" in context.task:
+                entered.set()
+                await release.wait()
+                return ActivityDecision(
+                    activity=Activity.CHAT,
+                    chat_action="reply",
+                    reply="关闭后不应显示这条主动消息。",
+                )
+            return ActivityDecision(activity=Activity.REST)
+
+    model = DelayedInitiativeModel()
+    async with SoulService(Settings(data_dir=tmp_path), model=model) as soul:
+        state = soul.store.load_subject()
+        state.autonomy_enabled = True
+        state.next_initiative_at = now() - timedelta(seconds=1)
+        soul.store.save_transition(state.dispatch_epoch, state)
+        tick = asyncio.create_task(soul.activities.idle())
+        await entered.wait()
+
+        state = soul.store.load_subject()
+        if change == "disable":
+            state.autonomy_enabled = False
+        else:
+            state.mode = "quiet"
+        soul.store.save_transition(state.dispatch_epoch, state)
+        release.set()
+        await tick
+
+        assert not [
+            item for item in soul.status()["interactions"] if item["choice"] == "initiative"
+        ]
+        assert soul.store.load_subject().autonomy_last_result == "paused"
