@@ -17,3 +17,8 @@ All results are local development evidence, not live deployment claims.
 - RED: effects/executor modules absent. GREEN: 7 executor/checkpoint tests passed.
 - Tested actual AsyncSqliteSaver persistence (langgraph 1.2.16, checkpoint-sqlite 3.1.2).
 - Unknown effects are retained; cancellation and owner interruption do not erase remote receipts.
+
+## T04
+- RED: context and MemPalace adapter modules absent. GREEN: 10 tests passed; 1 real-engine test skipped for missing explicit process/index configuration.
+- Inspected upstream commit f41e8e75ddaadf5588d5127715fa531d79eadb45, MCP schemas and get-drawer response in source. This is an inspected revision, not a live-tested engine.
+- No summary cache is used, so every model admission reads the current Recap revision.
