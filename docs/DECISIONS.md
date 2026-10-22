@@ -142,3 +142,26 @@ Status: planning baseline, 2026-10-22. This document specifies a new experimenta
 - [LAPUTA/Mentle background](https://github.com/ProjectViVy/laputa/blob/main/mentle/README.md): context/memory design inspiration, not a dependency or compatibility commitment.
 
 Research inspirations may inform later experiments but are not prerequisites or proof of human-like fatigue, emotion, or general self-improvement.
+
+## D013 — Complete experience consolidation and automatic persona evolution
+
+**Status:** Accepted by owner on 2026-10-22; supersedes the blanket persona-evolution
+prohibition in D006/D010 only for this governed chain. Skill review remains unchanged.
+
+**Decision:** Persist complete role-labeled experience, admit bounded windows with
+explicit continuation coordinates, and atomically publish Recap and coverage. A separate
+three-minute maintenance policy runs without requiring a model to select reflection.
+Six durable stage receipts support retry/backoff and restart without repeat folding.
+
+The owner explicitly requests automatic persona activation. Eligible identity,
+relationship, dark, world and separate model-inferred USER observations can publish
+through the versioned authority with window-bound evidence, epoch/base checks and
+idempotent receipts. Redline, Mission, Dream, public projection and owner-authored USER
+remain manual. WORLD is available through explicit inspection and omitted from automatic
+model projection, including reflection. Automatic changes are provenance-checked, not
+proof of factual truth. Rollback publishes a new version; active tasks keep their snapshot.
+Private notes use the memory outbox but do not recursively become consolidation sources.
+
+**Operational defaults:** 16000-character source windows; eight complete recent turns;
+retry intervals 3/6/12/24/48/60 minutes, capped at 60. Local-test auth and budget settings
+remain as explicitly selected by the owner. No QQ sending or new execution permissions.

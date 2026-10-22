@@ -280,6 +280,8 @@ class CognitiveService:
         limits = ModelLimits(max_tokens=self.soul.settings.model_output_limit,
                              timeout=self.soul.settings.request_timeout)
         reserve, attempts = reservation(self.soul.model, context, limits, [])
+        if reflection and hasattr(self.soul.model, "reflection_reservation"):
+            reserve = self.soul.model.reflection_reservation(context, limits)
         if (budget_exceeded(state.model_calls, attempts, self.soul.settings.model_call_limit)
                 or budget_exceeded(state.tokens_used, reserve, self.soul.settings.token_budget)):
             raise ValueError("Maintenance budget exhausted")
@@ -294,16 +296,57 @@ class CognitiveService:
         return result
 
     async def reflect_run(self, run):
-        # Filled by the typed persona boundary; this receipt also supports recovery
-        # for installations without an evolution-capable adapter.
-        run.reflection = {"changes": [], "note": "", "reason": "No persona change"}
+        from mysoul.persona import ReflectionDecision
+
+        self.check(run)
+        if not run.policy.persona_enabled:
+            decision = ReflectionDecision(reason="Automatic persona evolution paused by owner")
+        else:
+            context = self.context(run, (
+                "[persona-reflection] Reflect on this admitted experience window. Return only "
+                "evidence-supported changes or no changes with a reason. Changes replace a field's "
+                "whole text; preserve existing supported content. Allowed targets: identity, "
+                "relationship, dark, world, user_observations. Redline, Mission, Dream, public "
+                "persona and owner-written USER text are protected. These cannot change tools, "
+                "permissions or runtime rules. User observations are model inferences, not facts. "
+                "Assistant fiction is not owner biography; failures are not completed actions. "
+                "Cite only supplied evidence IDs. Omit routine chatter, errors and speculative "
+                "changes. Notes are private, model-authored reflection. Write Chinese."
+            ))
+            projection = json.loads(json.dumps(run.persona))
+            projection["sections"].pop("world", None)
+            context.task = json.dumps({"frozen_persona": projection}, ensure_ascii=False)
+            context.recap = run.recap_result
+            context.persona_version = run.persona["version"]
+            decision = ReflectionDecision.model_validate(await self.call(
+                run, context, reflection=True))
+        run.reflection = decision.model_dump(mode="json")
         run.receipts.append("reflect")
         run.stage = "effects"
         self.save(run)
 
     def apply_effects(self, run):
+        from mysoul.persona import ReflectionDecision, content_hash
+
         self.check(run)
-        run.outcome = "no_change"
+        decision = ReflectionDecision.model_validate(run.reflection)
+        if decision.changes:
+            self.soul.persona.apply_evolution(
+                run.persona["version"], run.epoch, "evolution:" + run.id,
+                decision.changes, run.window.refs,
+                expected_base_hash=content_hash(run.persona),
+                source_window=run.window.model_dump(mode="json"),
+            )
+            receipt = self.store.get("persona_change", "evolution:" + run.id)
+            run.outcome = receipt["status"]
+        else:
+            run.outcome = "no_change"
+        if decision.note:
+            self.store.add_evidence(Evidence(
+                id="reflection-note:" + run.id,
+                text="[Model-inferred reflection; not owner-confirmed]\n" + decision.note,
+                source="model-reflection", source_scopes=[Scope()],
+            ))
         run.receipts.append("effects")
         run.stage = "finish"
         self.save(run)

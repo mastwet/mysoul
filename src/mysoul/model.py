@@ -2,9 +2,14 @@ from collections import deque
 from typing import Protocol
 
 from mysoul.domain import Activity, ActivityDecision, ContextBundle, ModelLimits, StepDecision
+from mysoul.persona import ReflectionDecision
 
 
 class ModelAdapter(Protocol):
+    async def reflect(
+        self, context: ContextBundle, limits: ModelLimits
+    ) -> ReflectionDecision: ...
+
     async def decide(self, context: ContextBundle, limits: ModelLimits) -> ActivityDecision: ...
 
     async def execute_step(
@@ -37,7 +42,14 @@ class ReplayModel:
         self.calls = 0
         self.decisions = deque()
         self.steps = deque(steps)
+        self.reflections = deque()
         self.payloads: list[str] = []
+
+    async def reflect(self, context: ContextBundle, limits: ModelLimits) -> ReflectionDecision:
+        self.calls += 1
+        self.payloads.append(context.payload())
+        return (self.reflections.popleft() if self.reflections else
+                ReflectionDecision(reason="No supported persona change in offline replay"))
 
     async def decide(self, context: ContextBundle, limits: ModelLimits) -> ActivityDecision:
         self.calls += 1

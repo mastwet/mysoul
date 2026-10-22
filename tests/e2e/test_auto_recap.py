@@ -16,7 +16,7 @@ async def test_owner_evidence_is_consolidated_during_explicit_reflection(tmp_pat
         assert recap.author == "agent"
         assert recap.refs
         assert soul.store.evidence(recap.refs[0]).text.startswith("PRIVATE_CANARY")
-        assert soul.store.load_subject().model_calls == before + 1  # synthesis only
+        assert soul.store.load_subject().model_calls == before + 2  # synthesis + typed reflection
         assert not soul.store.all("proposal")
         calls = soul.model.calls
         for _ in range(20):

@@ -7,6 +7,7 @@ import os
 import httpx
 
 from mysoul.domain import ActivityDecision, ContextBundle, ModelLimits, StepDecision
+from mysoul.persona import ReflectionDecision
 
 
 class ProviderError(ValueError):
@@ -134,6 +135,14 @@ class OpenAICompatibleModel:
         # Uncapped output has no known reservation bound; count input/framing only then.
         bound = len(json.dumps(self.payload(context, limits, schema, extra)).encode("utf-8")) + 256
         return (bound + (limits.max_tokens or 0)) * (limits.retries + 1)
+
+    def reflection_reservation(self, context, limits):
+        payload = self.payload(context, limits, ReflectionDecision)
+        return (len(json.dumps(payload).encode("utf-8")) + 256 + (limits.max_tokens or 0)) * (
+            limits.retries + 1)
+
+    async def reflect(self, context: ContextBundle, limits: ModelLimits):
+        return await self._request(context, limits, ReflectionDecision)
 
     async def decide(self, context: ContextBundle, limits: ModelLimits):
         return await self._request(context, limits, ActivityDecision)

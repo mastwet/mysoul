@@ -196,6 +196,7 @@ class ContextBundle(Contract):
     task: str = ""
     recap: str = ""
     recap_version: int = 0
+    persona_version: int = 0
     recap_invalidation_epoch: int = 0
     evidence: list[Evidence] = Field(default_factory=list)
     history: list[ConversationMessage] = Field(default_factory=list)

@@ -269,15 +269,17 @@ class SoulService:
         history = self.dialogue_history(scope)
         if scope.audience == "owner":
             history = history[-tail:] if tail else []
+        profile = self.persona.current()
         bundle = await ContextAssembler(
             self.recap,
             self.memory,
             task=task,
-            persona_instructions=self.persona.current().instructions(scope),
+            persona_instructions=profile.instructions(scope),
             history=history,
             required_evidence=pending,
             required_history=scope.audience == "owner",
         ).build(scope, ContextBudget(max_chars=self.settings.context_chars))
+        bundle.persona_version = profile.version
         self.context_metrics = {
             "payload_chars": len(bundle.payload()),
             "budget_chars": self.settings.context_chars,

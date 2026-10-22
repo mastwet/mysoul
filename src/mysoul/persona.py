@@ -1,10 +1,12 @@
-"""Versioned operator authority; never writable through model tools or skills."""
+"""Versioned persona authority with evidence-bound automatic evolution."""
 
 import json
+from hashlib import sha256
+from typing import Literal
 
 from pydantic import Field
 
-from mysoul.domain import Contract, Scope
+from mysoul.domain import Contract, Scope, now, uid
 from mysoul.storage import Conflict
 
 
@@ -46,6 +48,23 @@ class PersonaSections(Contract):
     )
 
 
+class PersonaChange(Contract):
+    target: Literal["identity", "relationship", "dark", "world", "user_observations"]
+    text: str = Field(max_length=8000)
+    reason: str = Field(min_length=1, max_length=1000)
+    evidence_refs: list[str] = Field(min_length=1, max_length=32)
+
+
+class ReflectionDecision(Contract):
+    changes: list[PersonaChange] = Field(default_factory=list, max_length=5)
+    note: str = Field(default="", max_length=4000)
+    reason: str = Field(min_length=1, max_length=1000)
+
+
+def content_hash(value):
+    return sha256(json.dumps(value, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+
+
 class PersonaProfile(Contract):
     version: int = 0
     public: str = Field(
@@ -57,15 +76,19 @@ class PersonaProfile(Contract):
         max_length=8000,
     )
     sections: PersonaSections = Field(default_factory=PersonaSections)
+    user_observations: str = Field(default="", max_length=8000)
 
     def instructions(self, scope: Scope):
         if scope.audience != "owner":
             return "[公开人格配置]\n" + self.public
         return (
-            "[主人明确配置的人格；不改变运行权限]\n[public]\n"
+            "[当前版本人格；不改变运行权限]\n[public]\n"
             + self.public
             + "\n\n"
-            + "\n\n".join(f"[{key}]\n{value}" for key, value in self.sections.model_dump().items())
+            + "\n\n".join(f"[{key}]\n{value}" for key, value in self.sections.model_dump().items()
+                            if key != "world")
+            + "\n\n[user_observations: model-inferred, not owner-confirmed]\n"
+            + self.user_observations
         )
 
 
@@ -91,7 +114,7 @@ class PersonaStore:
                 (str(profile.version), body),
             )
 
-    def update(self, expected_version, *, sections=None, public=None):
+    def update(self, expected_version, *, sections=None, public=None, user_observations=None):
         with self.store.transaction() as db:
             current = self.current()
             if expected_version != current.version:
@@ -102,6 +125,8 @@ class PersonaStore:
                 values["sections"] = sections
             if public is not None:
                 values["public"] = public
+            if user_observations is not None:
+                values["user_observations"] = user_observations
             profile = PersonaProfile.model_validate(values)
             body = profile.model_dump_json()
             db.execute("INSERT OR REPLACE INTO objects VALUES('config','persona',?)", (body,))
@@ -119,3 +144,101 @@ class PersonaStore:
                     "ORDER BY CAST(id AS INTEGER) DESC"
                 )
             ]
+
+
+    def changes(self):
+        return sorted(self.store.all("persona_change"), key=lambda r: r["created_at"], reverse=True)
+
+    def apply_evolution(self, expected_version, expected_epoch, operation_id, changes, refs,
+                        *, expected_base_hash=None, source_window=None):
+        changes = [PersonaChange.model_validate(c) for c in changes]
+        candidate_hash = content_hash({"changes": [c.model_dump() for c in changes],
+                                       "refs": refs, "base": expected_version})
+        receipt = self.store.get("persona_change", operation_id)
+        if receipt:
+            if receipt["candidate_hash"] != candidate_hash:
+                raise Conflict("Operation ID already binds a different candidate")
+            if receipt["status"] in {"applied", "no_change"}:
+                return PersonaProfile.model_validate(
+                    self.store.get("persona_revision", str(receipt["version"])))
+            raise Conflict("Candidate was already rejected; prepare a new run")
+        record = {"id": operation_id, "created_at": now().isoformat(), "actor": "automatic",
+                  "base_version": expected_version, "candidate_hash": candidate_hash,
+                  "source_window": source_window, "refs": refs, "changes": [],
+                  "status": "rejected", "version": None, "base_hash": expected_base_hash}
+        try:
+            with self.store.transaction() as db:
+                current = self.current()
+                record["base_hash"] = content_hash(current.model_dump())
+                if (current.version != expected_version
+                        or (expected_base_hash and expected_base_hash != record["base_hash"])
+                        or db.execute("SELECT epoch FROM subjects WHERE id='mysoul'")
+                        .fetchone()[0] != expected_epoch):
+                    raise Conflict("Persona base or owner epoch changed")
+                if len({c.target for c in changes}) != len(changes):
+                    raise ValueError("Duplicate persona targets")
+                values = current.model_dump()
+                for change in changes:
+                    if not set(change.evidence_refs) <= set(refs):
+                        raise ValueError("Persona citation is outside admitted source window")
+                    for ref in change.evidence_refs:
+                        if not self.store.evidence(ref).permitted(Scope()):
+                            raise ValueError("Persona evidence scope denied")
+                    target = values if change.target == "user_observations" else values["sections"]
+                    record["changes"].append({"target": change.target,
+                                              "old": target[change.target], "new": change.text,
+                                              "reason": change.reason,
+                                              "evidence_refs": change.evidence_refs})
+                    target[change.target] = change.text
+                changed = values != current.model_dump()
+                if changed:
+                    values["version"] += 1
+                updated = PersonaProfile.model_validate(values)
+                if changed:
+                    db.execute("INSERT OR REPLACE INTO objects VALUES('config','persona',?)",
+                               (updated.model_dump_json(),))
+                    db.execute("INSERT INTO objects VALUES('persona_revision',?,?)",
+                               (str(updated.version), updated.model_dump_json()))
+                record.update(status="applied" if changed else "no_change", version=updated.version)
+                db.execute("INSERT INTO objects VALUES('persona_change',?,?)",
+                           (operation_id, json.dumps(record, ensure_ascii=False)))
+                return updated
+        except (ValueError, KeyError) as exc:
+            record["status"] = "conflict" if isinstance(exc, Conflict) else "rejected"
+            record["error"] = str(exc)[:300]
+            self.store.put_new("persona_change", operation_id, record)
+            raise
+
+    def rollback(self, expected_version, target_version):
+        with self.store.transaction() as db:
+            current = self.current()
+            if current.version != expected_version:
+                raise Conflict("Persona version changed")
+            target = self.store.get("persona_revision", str(target_version))
+            if target is None:
+                raise KeyError(target_version)
+            restored = PersonaProfile.model_validate(target)
+            restored.version = current.version + 1
+            db.execute("INSERT OR REPLACE INTO objects VALUES('config','persona',?)",
+                       (restored.model_dump_json(),))
+            db.execute("INSERT INTO objects VALUES('persona_revision',?,?)",
+                       (str(restored.version), restored.model_dump_json()))
+            changes = [
+                {"target": key, "old": value, "new": restored.sections.model_dump()[key],
+                 "reason": f"Owner rollback to revision {target_version}", "evidence_refs": []}
+                for key, value in current.sections.model_dump().items()
+                if restored.sections.model_dump()[key] != value
+            ]
+            for key in ("public", "user_observations"):
+                if getattr(current, key) != getattr(restored, key):
+                    changes.append({"target": key, "old": getattr(current, key),
+                                    "new": getattr(restored, key), "reason": "Owner rollback",
+                                    "evidence_refs": []})
+            record = {"id": uid(), "created_at": now().isoformat(), "actor": "owner_rollback",
+                      "base_version": current.version, "version": restored.version,
+                      "target_version": target_version, "status": "applied", "changes": changes,
+                      "refs": [], "base_hash": content_hash(current.model_dump()),
+                      "candidate_hash": content_hash(restored.model_dump())}
+            db.execute("INSERT INTO objects VALUES('persona_change',?,?)",
+                       (record["id"], json.dumps(record, ensure_ascii=False)))
+            return restored
