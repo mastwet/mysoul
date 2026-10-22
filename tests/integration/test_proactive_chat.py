@@ -217,3 +217,58 @@ async def test_runtime_pause_during_a_check_suppresses_its_reply(tmp_path, chang
             item for item in soul.status()["interactions"] if item["choice"] == "initiative"
         ]
         assert soul.store.load_subject().autonomy_last_result == "paused"
+
+
+async def test_three_minute_heartbeat_repeats_through_ticks_and_restart(tmp_path, monkeypatch):
+    instant = now()
+    monkeypatch.setattr("mysoul.autonomy.now", lambda: instant)
+    model = InitiativeModel()
+    async with SoulService(Settings(data_dir=tmp_path), model=model) as soul:
+        soul.life.clock = lambda: instant
+        state = soul.store.load_subject()
+        state.autonomy_enabled = True
+        state.autonomy_interval_minutes = 3
+        state.next_initiative_at = instant
+        soul.store.save_transition(state.dispatch_epoch, state)
+        await soul.tick()
+        assert model.calls == 1
+        assert soul.store.load_subject().next_initiative_at == instant + timedelta(minutes=3)
+        instant += timedelta(seconds=179)
+        await soul.tick()
+        assert model.calls == 1
+        instant += timedelta(seconds=1)
+        await soul.tick()
+        assert model.calls == 2
+
+    restarted_model = InitiativeModel()
+    async with SoulService(Settings(data_dir=tmp_path), model=restarted_model) as soul:
+        soul.life.clock = lambda: instant
+        await soul.tick()
+        assert restarted_model.calls == 0
+        instant += timedelta(minutes=3)
+        await soul.tick()
+        assert restarted_model.calls == 1
+        messages = [i for i in soul.status()["interactions"] if i["choice"] == "initiative"]
+        assert len(messages) == 3
+
+
+async def test_previously_considered_maintenance_does_not_starve_due_heartbeat(tmp_path):
+    from mysoul.domain import Evidence
+
+    model = InitiativeModel()
+    async with SoulService(Settings(data_dir=tmp_path), model=model) as soul:
+        evidence = Evidence(text="A remembered detail.")
+        soul.store.add_evidence(evidence)
+        soul.recap.enqueue(evidence.id)
+        state = soul.store.load_subject()
+        state.autonomy_enabled = True
+        state.next_initiative_at = now() - timedelta(seconds=1)
+        soul.store.save_transition(state.dispatch_epoch, state)
+        await soul.tick()  # New maintenance has priority; the model elects to rest.
+        assert model.calls == 1
+        assert soul.recap.pending()
+        await soul.tick()  # Unchanged maintenance must not consume every later idle tick.
+        assert model.calls == 2
+        assert soul.store.load_subject().autonomy_last_result == "message"
+        await soul.tick()
+        assert model.calls == 2

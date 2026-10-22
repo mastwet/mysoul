@@ -76,7 +76,7 @@ class LifeInput(Contract):
     mode: Literal["normal", "quiet", "focused"]
     fatigue: float = Field(ge=0, le=1, allow_inf_nan=False)
     autonomy_enabled: bool | None = None
-    autonomy_interval_minutes: int | None = Field(default=None, ge=240, le=1440)
+    autonomy_interval_minutes: int | None = Field(default=None, ge=3, le=1440)
 
 
 def operator_token(settings):

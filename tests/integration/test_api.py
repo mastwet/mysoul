@@ -126,7 +126,7 @@ def test_autonomous_main_chat_schedule_is_persisted_and_bounded(client):
             "mode": "normal",
             "fatigue": 0,
             "autonomy_enabled": True,
-            "autonomy_interval_minutes": 60,
+            "autonomy_interval_minutes": 2,
         },
     ).status_code == 422
 
@@ -163,3 +163,15 @@ def test_operator_status_exposes_budget_limits_without_credentials(client):
     }
     assert "operator_token" not in body
     assert "api_key" not in body
+
+
+def test_three_minute_heartbeat_can_be_saved(client):
+    response = client.post(
+        "/api/life",
+        json={"mode": "normal", "fatigue": 0, "autonomy_enabled": True,
+              "autonomy_interval_minutes": 3},
+    )
+    assert response.status_code == 200
+    state = client.get("/api/status").json()["state"]
+    assert state["autonomy_interval_minutes"] == 3
+    assert state["next_initiative_at"] is not None

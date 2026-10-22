@@ -151,6 +151,26 @@ The marked observation test additionally requires `MYSOUL_VALIDATE_QQ=1`. The se
 - **Reply recovery:** each event claims a durable reply intent before execution. On restart, a confirmed or uncertain operation is recovered from that association; a new reply goal is never silently created. Coalesced conversation batches produce at most one reply. Oversized events retain full evidence and an explicit overflow outcome so unrelated inbox entries continue.
 - **Modes and rest:** quiet mode suppresses incidental model wakeups; direct address and authenticated owner input can wake it. Focused mode supplies a preference for bounded work without changing permissions. A chosen rest deadline can wake once; plain rest does not poll a model. Foreground tasks are recorded as work for fatigue accounting.
 
+## Main-chat heartbeat
+
+In Settings → Life, enable main-chat initiative and choose the interval. The
+three-minute option is useful for observing the loop; it is a model check, not a
+promise to send a message each time. The chat status distinguishes checking,
+quiet completion, a proactive message and failure. Pending maintenance already
+considered by the model does not permanently block a due heartbeat.
+
+The next due time is persisted across restart. The background polling cycle and
+active inference can delay a due check slightly; checks do not run concurrently.
+Quiet/focused mode, high fatigue, active owner/work execution and exhausted
+budgets can defer checks. A finite model-call budget is cumulative, including
+quiet/failed checks: the default 100 calls supports at most five hours at a
+three-minute cadence from a fresh counter, before other model work is counted.
+Inspect Settings and the call budget if checks stop. Configure a suitable trusted
+`MYSOUL_MODEL_CALL_LIMIT` before restarting for a longer run. Do not reset stored
+counters or force repeated retries to conceal failures. A failed request leaves
+the next scheduled attempt available; inspect the configured model gateway when
+failures recur.
+
 ## References and notices
 
 - [LangGraph checkpoint SQLite](https://github.com/langchain-ai/langgraph/tree/main/libs/checkpoint-sqlite) supplies graph persistence, not exactly-once remote effects.

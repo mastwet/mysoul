@@ -185,3 +185,32 @@ for commands, screenshot references, third-party notice and review boundaries.
   **12 Node UI tests passed**; Ruff, JS syntax and wheel build passed. A fresh
   review found no important issue in the normalization. The separate real provider
   contract result above remains valid; other real integration gates remain pending.
+
+
+## Three-minute main-chat heartbeat (2026-10-22)
+
+- Reduced the permitted interval minimum from 240 to 3 minutes in both API and
+  durable state validation; added a three-minute UI option and accurate minute
+  formatting. Fresh-install default remains six hours. The active local service
+  was explicitly saved with autonomy enabled and interval 3.
+- Fixed starvation when already-considered, unchanged maintenance remained ready:
+  a due main-chat check can now proceed after that maintenance's initial admission.
+  New readiness still gets priority; mode, fatigue, budget, owner input, executor,
+  dispatch epoch, locking and persisted deadline guards remain in force.
+- RED tests reproduced rejected three-minute configuration, missing UI option and
+  maintenance starvation. GREEN: **185 Python passed, 8 gated tests skipped**;
+  **23 UI tests passed**; Ruff, diff whitespace and source/wheel builds passed.
+  Regressions exercise tick-driven cadence, no early duplicate, restart persistence
+  and maintenance starvation. Independent review found no important issue.
+- Live verification used the running loopback service and its existing real
+  `gemini-3.8-flash-high` configuration. After saving the interval at 22:43:31
+  Asia/Shanghai, natural checks started at **22:46:36**, **22:49:38** and
+  **22:52:41**. The first timed out at 120 seconds. The next two completed at
+  **22:50:11** and **22:52:59**, choosing silence. No new proactive message was
+  generated in this observation. A separate structured connection probe passed.
+  The schedule advanced automatically without toggling autonomy or manual ticks.
+- Browser reloaded the updated bundle and displayed `每 3 分钟` plus the actual
+  last-check outcome. Existing cumulative call limit remains 100 (54 used at the
+  end of observation); heartbeat checks consume that budget. This verifies live
+  scheduling/recovery and provider decisions, not guaranteed speech every cycle
+  or full QQ/MemPalace/isolation acceptance. Skipped gates are not passes.

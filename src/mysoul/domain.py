@@ -62,7 +62,7 @@ class LifeState(Contract):
     current_activity_id: str | None = None
     rest_until: AwareDatetime | None = None
     autonomy_enabled: bool = False
-    autonomy_interval_minutes: int = Field(default=360, ge=240, le=1440)
+    autonomy_interval_minutes: int = Field(default=360, ge=3, le=1440)
     next_initiative_at: AwareDatetime | None = None
     autonomy_last_checked_at: AwareDatetime | None = None
     autonomy_last_result: Literal[

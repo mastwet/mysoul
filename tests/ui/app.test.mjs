@@ -344,3 +344,20 @@ test("finishing a send after navigation does not steal focus back to chat",async
     assert.equal(ui.document.getElementById("tasks").hidden,false);
   }finally{release();ui.close();}
 });
+
+
+test("three-minute heartbeat is selectable, persisted and displayed in minutes",async()=>{
+  const ui=await fixture();
+  try{
+    const d=ui.document;
+    d.getElementById("open-settings").click();
+    d.querySelector('[data-setting="life"]').click();
+    const interval=d.getElementById("autonomy-interval");
+    interval.value="3";
+    assert.equal(interval.value,"3");
+    d.getElementById("life-form").dispatchEvent(new ui.window.Event("submit",{bubbles:true,cancelable:true}));
+    await until(()=>ui.writes.some(item=>item.path==="/api/life")&&!d.getElementById("life-form").hasAttribute("aria-busy"));
+    assert.equal(ui.writes.at(-1).body.autonomy_interval_minutes,3);
+    assert.match(d.getElementById("initiative-status").textContent,/每 3 分钟/);
+  }finally{ui.close();}
+});

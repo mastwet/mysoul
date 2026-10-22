@@ -152,9 +152,12 @@ class ActivityRouter:
             ], sort_keys=True).encode()
         ).hexdigest()
         wake = soul.store.get("wake", signal)
-        if not any(ready.values()) and await self._main_chat_initiative():
+        # New readiness gets first consideration; deferred unchanged work must not
+        # permanently starve the independently scheduled owner-chat heartbeat.
+        settled = wake and wake.get("admitted", True) and not expired
+        if (not any(ready.values()) or settled) and await self._main_chat_initiative():
             return
-        if not any(ready.values()) or (wake and wake.get("admitted", True) and not expired):
+        if not any(ready.values()) or settled:
             decision = await soul.life.choose([])
             if expired:
                 await self.perform(decision, state.dispatch_epoch, key=signal)
