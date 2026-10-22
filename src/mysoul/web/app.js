@@ -52,6 +52,7 @@ const fragment=new URLSearchParams(location.hash.slice(1));
 if(fragment.has("token")){token=fragment.get("token");history.replaceState(null,"",location.pathname);}
 let csrf="", snapshot=null, skillData=null, recapBase=null, activeView="chat";
 let refreshPromise=null, pendingChat=null, chatSignature="", lifeDirty=false, loadedChat=false;
+let modelDirty=false, modelVersion=0;
 const busyScopes=new Set(), signatures=new WeakMap();
 
 function notice(text) {
@@ -218,7 +219,17 @@ async function refresh() {
 function renderSnapshot(force=false) {
   if(!snapshot)return;
   const state=snapshot.state, percent=Math.round(state.fatigue*100), activity=activityNames[state.activity]||state.activity;
-  $("runtime-label").textContent=snapshot.backend==="replay"?"离线回放":"真实通道";
+  const model=snapshot.model;
+  const modelLabel=model.mode==="provider"?`真实模型 · ${model.model}`:model.mode==="procedure-replay"?"离线流程演示":"离线回放";
+  $("runtime-label").textContent=modelLabel;
+  $("model-current").textContent=`当前：${modelLabel}${model.source==="local"?" · 已保存在本机":model.source==="environment"?" · 环境变量配置":""}`;
+  $("reset-model").hidden=!modelDirty;
+  if(!modelDirty&&!busyScopes.has($("model-form"))){
+    modelVersion=model.version;$("model-mode").value=model.mode;$("model-url").value=model.url;$("model-name").value=model.model;
+    $("model-key").placeholder=model.key_present?"已保存密钥，留空表示保留":"填写模型服务的 API Key";
+    $("model-key-note").textContent=model.key_present?"密钥已配置，不会回显。更改 API 地址时，请重新填写密钥。":"与本机操作令牌不同。密钥保存在本机，不会回显。";
+    syncModelFields();
+  }
   $("activity").textContent=activity;$("status-activity").textContent=activity;
   $("fatigue-label").textContent=`${percent}%`;$("status-fatigue").textContent=`${percent}%`;
   $("fatigue-meter").value=state.fatigue;$("fatigue-card").setAttribute("aria-label",`疲劳 ${percent}%，查看状态`);
@@ -237,7 +248,7 @@ function renderSnapshot(force=false) {
   $("recap-view").textContent=snapshot.recap.text||"还没有摘要。新的经验会在整理后出现在这里。";
   const activeTasks=snapshot.goals.filter(g=>["pending","active","suspended"].includes(g.status)).length;
   $("task-count").textContent=activeTasks;$("task-count").hidden=!activeTasks;
-  $("connection-description").textContent=snapshot.backend==="replay"?"当前使用离线回放。真实模型、长期记忆和 QQ 尚待验收。":`QQ 通道已配置。真实发送${snapshot.send_enabled?"已启用，仍受白名单与权限检查约束":"未启用，当前仅观察或保留草稿"}。`;
+  $("connection-description").textContent=`模型：${modelLabel}。${snapshot.backend==="replay"?"QQ 使用离线回放。":`QQ 通道已配置，真实发送${snapshot.send_enabled?"已启用":"未启用"}。`}下方为完整集成验收状态，保存配置或连接测试不会自动通过验收。`;
   const gateNames={provider:"模型服务",mempalace:"长期记忆",qq:"QQ 通道",isolation:"代码执行"};
   keyedList($("gates"),Object.entries(snapshot.gates).map(([key,value])=>({key,value})),item=>{const li=node("li");li.append(node("b",gateNames[item.key]),node("span",item.value==="disabled"?"未启用":item.value==="deferred"?"待验收":item.value));return li;},"",force);
   renderMessages(snapshot.interactions);renderRecent(snapshot.interactions);renderJobs(snapshot,force);
@@ -355,6 +366,28 @@ bindForm("goal-form",async()=>{await api("goals",{text:$("goal-text").value});$(
 $("mode").addEventListener("change",()=>{lifeDirty=true;$("life-saved").textContent="";});
 for(const id of ["fatigue-input","fatigue-range"]){$(id).addEventListener("input",()=>{lifeDirty=true;$(id==="fatigue-input"?"fatigue-range":"fatigue-input").value=$(id).value;$("life-saved").textContent="";});}
 bindForm("life-form",async()=>{await api("life",{mode:$("mode").value,fatigue:Number($("fatigue-input").value)/100});lifeDirty=false;$("life-saved").textContent="已保存";});
+function syncModelFields(){
+  const provider=$("model-mode").value==="provider";
+  $("provider-fields").hidden=!provider;$("test-model").hidden=!provider;
+  $("model-url").required=provider;$("model-name").required=provider;
+  for(const id of ["model-url","model-name","model-key"])$(id).disabled=!provider;
+}
+function editModel(){modelDirty=true;$("reset-model").hidden=false;$("model-feedback").textContent="";syncModelFields();}
+$("model-form").addEventListener("input",editModel);
+$("model-mode").addEventListener("change",editModel);
+$("reset-model").addEventListener("click",()=>{modelDirty=false;$("model-key").value="";$("model-feedback").textContent="";notice("");renderSnapshot();});
+function modelInput(){
+  const provider=$("model-mode").value==="provider", saved=snapshot.model;
+  return {expected_version:modelVersion,mode:$("model-mode").value,url:provider?$("model-url").value:saved.url,model:provider?$("model-name").value:saved.model,api_key:provider?$("model-key").value:""};
+}
+$("test-model").addEventListener("click",()=>{
+  if(!$("model-form").reportValidity())return;
+  busy($("test-model"),async()=>{await api("model/test",modelInput());$("model-feedback").textContent="连接成功，已收到有效模型响应。尚未保存或启用。";});
+});
+bindForm("model-form",async()=>{
+  await api("model",modelInput());$("model-key").value="";modelDirty=false;
+  $("model-feedback").textContent="已保存并启用，重启后继续使用此配置。";
+});
 $("edit-recap").addEventListener("click",()=>{recapBase=snapshot.recap;$("recap-text").value=recapBase.text;$("recap-form").hidden=false;$("recap-actions").hidden=true;$("recap-view").hidden=true;$("recap-text").focus();});
 function closeRecap(){$("recap-form").hidden=true;$("recap-actions").hidden=false;$("recap-view").hidden=false;}
 $("cancel-recap").addEventListener("click",closeRecap);

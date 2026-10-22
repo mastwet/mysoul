@@ -38,6 +38,7 @@ def main():
         # Replay command cannot construct a live provider or phone backend.
         settings.backend = "replay"
         settings.model_mode = "replay"
+        settings.load_saved_model = False
         settings.memory_backend = "fixture"
         settings.send_enabled = False
         asyncio.run(replay(settings, args.trace))

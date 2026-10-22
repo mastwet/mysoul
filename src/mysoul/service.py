@@ -20,6 +20,7 @@ from mysoul.lease import SubjectLease
 from mysoul.life import LifeController
 from mysoul.memory import FixtureMemory
 from mysoul.model import ReplayModel, reservation
+from mysoul.model_settings import ModelConfiguration, ModelSettings
 from mysoul.phone.replay import ReplayPhone
 from mysoul.scheduler import Scheduler
 from mysoul.skills import SkillStore
@@ -33,15 +34,11 @@ class SoulService:
         self.settings = settings
         self.store = StateStore(settings.data_dir / "state.sqlite")
         self.store.load_subject()
-        if model is None and settings.model_mode == "provider":
-            from mysoul.provider import OpenAICompatibleModel
-
-            model = OpenAICompatibleModel.from_environment()
-        elif model is None and settings.model_mode == "procedure-replay":
-            from mysoul.evolution import ProcedureReplayModel
-
-            model = ProcedureReplayModel()
-        self.model = model or ReplayModel()
+        self.model_settings = ModelSettings(settings.data_dir)
+        self.model_configuration = (self.model_settings.load(settings) if model is None
+                                    else ModelConfiguration(mode=settings.model_mode))
+        self.model = model if model is not None else self.model_configuration.create_model()
+        settings.model_mode = self.model_configuration.mode
         if phone is None and settings.backend == "napcat":
             import os
 
@@ -531,13 +528,69 @@ class SoulService:
         factory = ProcedureReplayModel
         label = "procedure-replay"
         if self.settings.model_mode == "provider":
-            from mysoul.provider import OpenAICompatibleModel
-
-            factory = OpenAICompatibleModel.from_environment
+            factory = self.model_configuration.create_model
             label = getattr(self.model, "model", "configured-provider")
         return await CandidateRunner(
             self.skills, model_factory=factory, cases=cases, model_label=label, budget_owner=self
         ).run(proposal_id)
+
+    @admitted("configuration")
+    async def configure_model(self, update):
+        from mysoul.storage import Conflict
+
+        if self.owner_turns:
+            raise Conflict("Wait for owner inference to finish")
+        configuration = self.model_settings.resolve(update, self.model_configuration)
+        model = configuration.create_model()
+        try:
+            # No await between validation, durable save and the atomic reference switch.
+            self.model_settings.save(configuration)
+        except BaseException:
+            close = getattr(model, "close", None)
+            if close:
+                await close()
+            raise
+        old = self.model
+        self.model = self.life.model = self.executor.model = model
+        self.model_configuration = configuration
+        self.settings.model_mode = configuration.mode
+        close = getattr(old, "close", None)
+        if close:
+            await close()
+        return configuration.public()
+
+    @admitted("configuration")
+    async def probe_model(self, update):
+        import asyncio
+
+        from mysoul.domain import ContextBundle
+        from mysoul.storage import Conflict
+
+        configuration = self.model_settings.resolve(update, self.model_configuration)
+        if configuration.mode != "provider":
+            raise ValueError("Choose provider mode to test a connection")
+        model = configuration.create_model()
+        try:
+            # Deliberately bypass ContextAssembler: probes send no private application data.
+            context = ContextBundle(task="Connection test. Choose rest.")
+            limits = ModelLimits(max_tokens=128, timeout=10, retries=0)
+            reserve, attempts = reservation(model, context, limits)
+            state = self.store.load_subject()
+            if (state.model_calls + attempts > self.settings.model_call_limit
+                    or state.tokens_used + reserve > self.settings.token_budget):
+                raise Conflict("Model probe budget exhausted")
+            state.model_calls += attempts
+            state.tokens_used += reserve
+            self.store.save_transition(state.dispatch_epoch, state)
+            try:
+                await asyncio.wait_for(model.decide(context, limits), limits.timeout)
+            except (ValueError, TimeoutError):
+                raise ValueError(
+                    "Model connection failed; check endpoint, model and API key"
+                ) from None
+            return {"ok": True, "detail": "Structured response received; settings not saved"}
+        finally:
+            await model.close()
 
     def status(self):
         with self.store.lock:
@@ -563,6 +616,7 @@ class SoulService:
                 "isolation": "disabled",
             },
             "backend": self.settings.backend,
+            "model": self.model_configuration.public(),
             "limits": {
                 "model_calls": self.settings.model_call_limit,
                 "tokens": self.settings.token_budget,

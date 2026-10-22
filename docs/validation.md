@@ -105,3 +105,26 @@ for commands, screenshot references, third-party notice and review boundaries.
 - Installed wheel smoke verified SQL, built-in Markdown and web resources. CLI replay preserves Chinese UTF-8 output.
 - Browser walkthrough was repeated after restart on the final implementation; a responsive UI screenshot is saved in `assets/operator-ui.png`.
 - Details and verification boundaries: `review.md`. Source remains on the named feature branch; no merge, push, deployment or live account setup was performed.
+
+## Model configuration UI follow-up
+
+- Reproduced the missing model configuration endpoint/form with failing Python and
+  actual HTML/app.js DOM tests before implementation.
+- Added authenticated endpoint/model/API-key settings, redacted reads, atomic local
+  save/activation, Windows DPAPI storage, restart restoration and an explicit
+  private-free, budgeted, bounded connection test. CLI replay ignores saved providers.
+- Verified retained keys cannot silently move to another endpoint; stale revisions,
+  active work and owner inference reject a switch. Disk failure preserves the active
+  model. Failed probes close clients and do not retry, save or activate configuration.
+  Candidate tests use the same configured provider even if environment variables change.
+- Independent review found an incorrect probe-schema reservation and hidden URL
+  validation blocking an offline switch. Both were reproduced with failing regressions
+  and fixed; follow-up review identified no remaining important finding.
+- Full verification: **142 Python tests passed, 8 existing live/isolation skips**;
+  **11 Node UI tests passed**; Ruff, JS syntax and wheel build passed.
+- Browser walkthrough on the actual loopback service: model service navigation,
+  provider fields, invalid address followed by offline selection, discard/restore,
+  and a 390×844 responsive form with all actions visible. Screenshot:
+  `assets/model-settings-mobile.png`. No real API key was entered or provider called.
+- Preview remains an offline procedure demonstration. The real provider, full
+  MemPalace, authorized QQ and isolation acceptance boundaries remain unchanged.

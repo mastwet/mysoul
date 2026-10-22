@@ -112,13 +112,16 @@ async def test_provider_mode_uses_actual_provider_serialization_and_subject_budg
             "content": decision.model_dump_json()
         }}]})
 
-    def factory(cls):
-        model = cls("http://fixture.invalid", "fixture-selected", "fixture-key",
-                    transport=httpx.MockTransport(transport))
-        clients.append(model)
-        return model
+    original = OpenAICompatibleModel.__init__
 
-    monkeypatch.setattr(OpenAICompatibleModel, "from_environment", classmethod(factory))
+    def initialize(model, url, model_id, key, **kwargs):
+        original(model, url, model_id, key, transport=httpx.MockTransport(transport))
+        clients.append(model)
+
+    monkeypatch.setattr(OpenAICompatibleModel, "__init__", initialize)
+    monkeypatch.setenv("MYSOUL_PROVIDER_URL", "https://fixture.invalid/v1")
+    monkeypatch.setenv("MYSOUL_MODEL", "fixture-selected")
+    monkeypatch.setenv("MYSOUL_API_KEY", "fixture-key")
     async with SoulService(Settings(data_dir=tmp_path, model_mode="provider")) as soul:
         soul.store.add_evidence(Evidence(id="failure", text="verification was missing"))
         proposal = soul.skills.propose("# Work\nProcedure: verify\n", ["failure"])

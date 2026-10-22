@@ -6,11 +6,12 @@ column, a bottom composer, and a small top-right fatigue/activity card. Tasks,
 memory and skill review remain real views of the existing application services.
 The recent list navigates actual messages in the single subject's history.
 
-Settings are grouped into appearance/input, subject state, public persona, and
-connections/budgets. Light, dark and system appearance plus send-key preference
+Settings are grouped into appearance/input, model service, subject state, public persona,
+and connections/budgets. Light, dark and system appearance plus send-key preference
 persist in this browser. Subject/persona changes use the authenticated application
 API. Fatigue uses percentages in the UI and the existing 0–1 API contract. Budget
-limits are exposed read-only; credentials and permissions remain outside the UI.
+limits are exposed read-only. Model endpoint, raw model ID and API key have an
+authenticated settings form; transport permissions remain outside the UI.
 
 Messages use a pinned local Markdown parser, with raw HTML disabled, safe link
 protocols, noreferrer/noopener on external links, and images rendered as alternative

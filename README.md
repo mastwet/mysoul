@@ -23,6 +23,11 @@ Open the local access URL printed by the command. Defaults use deterministic rep
 no credentials or QQ account are needed. See [operations and recovery](docs/runbook.md)
 for a file-work demonstration, real integration setup and recovery procedures.
 
+Configure a real model under **设置 → 模型服务**: base API URL, model ID and API key.
+The local operator token only unlocks the UI. Test the connection, then save and
+activate the configuration; keys are never returned by the API. See the runbook
+for local secret storage and restart behavior.
+
 ```powershell
 uv run python -m mysoul replay --trace tests/fixtures/life_trace.jsonl --data-dir .local/replay-demo
 uv run ruff check .

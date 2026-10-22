@@ -1082,6 +1082,9 @@ dialog::backdrop {
   padding:0;
   margin:22px 0 30px
 }
+#provider-fields {
+  margin-top:20px
+}
 .connection-list li {
   display:flex;
   align-items:center;

@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Literal
 
 from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import Field
 from starlette.middleware.trustedhost import TrustedHostMiddleware
@@ -14,6 +15,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from mysoul.config import Settings
 from mysoul.domain import Contract, Goal
 from mysoul.evolution import RegressionCase
+from mysoul.model_settings import ModelUpdate
 from mysoul.service import SoulService
 from mysoul.storage import Conflict
 
@@ -147,6 +149,23 @@ def create_app(settings: Settings | None = None, *, token=None, service=None):
     @app.exception_handler(ValueError)
     async def value_handler(request, exc):
         return JSONResponse({"detail": "Invalid input or unavailable capability"}, status_code=400)
+
+    @app.exception_handler(RequestValidationError)
+    async def validation_handler(request, exc):
+        # Pydantic's default error includes input values, including submitted credentials.
+        return JSONResponse({"detail": "输入格式不正确，请检查字段内容。"}, status_code=422)
+
+    @app.get("/api/model", dependencies=[Depends(authorize)])
+    async def model_settings(request: Request):
+        return request.app.state.soul.model_configuration.public()
+
+    @app.post("/api/model", dependencies=[Depends(authorize)])
+    async def configure_model(body: ModelUpdate, request: Request):
+        return await request.app.state.soul.configure_model(body)
+
+    @app.post("/api/model/test", dependencies=[Depends(authorize)])
+    async def probe_model(body: ModelUpdate, request: Request):
+        return await request.app.state.soul.probe_model(body)
 
     @app.get("/")
     async def index():

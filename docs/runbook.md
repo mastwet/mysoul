@@ -11,6 +11,33 @@ uv run python -m mysoul serve
 
 Open the loopback URL printed by the command. Its fragment contains the local operator token; the browser removes it from the address after reading it. The token is retained in that tab's session storage. Private reads require the token; mutations additionally require the configured origin and a session CSRF nonce. Keep one process per data directory. No LAN/public binding is supported.
 
+### Configure the model in the UI
+
+Open **设置 → 模型服务**, choose **真实模型 · OpenAI 兼容接口**, and enter the
+provider's base API URL (normally ending in `/v1`), raw model ID and API key.
+The **本机操作令牌** authenticates this UI; it is unrelated to the provider API key.
+The header reports the active model independently of the QQ transport backend.
+
+**测试连接** sends one minimal structured-output request with a 10-second limit,
+no retry and no chat/Recap/evidence payload. It consumes the subject's durable
+model budget and neither saves nor activates the form. **保存并启用** atomically
+saves and switches the active model while the subject is idle. Normal inference
+then sends its scoped context to that configured service. Saving does not itself
+test compatibility or pass the full live integration gate. **撤销修改** restores
+the latest polled configuration and clears the unsaved key, including after a
+version conflict. A failed save retains inputs.
+
+Saved settings take precedence over model environment variables on the next
+`serve` start. They are stored only in the selected data directory's `model.settings`,
+excluded from Git. On Windows, DPAPI encrypts the entire file for the current OS
+user; copying it to another user/machine is not a portable credential backup.
+On POSIX, the file is owner-readable/writable (`0600`), without DPAPI encryption.
+Keys never appear in API reads and blank keys preserve the current key only for
+the exact same base URL. A new base URL requires a newly entered key. HTTPS and
+loopback HTTP endpoints are supported; redirects are not followed. Switching to
+offline mode retains the last saved provider details for a later switch back.
+The `replay` command always ignores saved providers and remains offline.
+
 The default uses deterministic offline responses and fixture memory. It is useful for exercising state and review workflows; it does not perform general AI work. For a deterministic file-task demonstration, set `MYSOUL_MODEL_MODE=procedure-replay`. That fixture writes `report.txt`, and reads it back when the active skill contains `Procedure: verify`.
 
 The UI opens in the conversation view. The top-right fatigue card opens current
@@ -59,7 +86,7 @@ Each gate remains independent. Configuration or a skipped test is not validation
 
 | Capability | Configuration and verification |
 | --- | --- |
-| Model | Set `MYSOUL_MODEL_MODE=provider`, `MYSOUL_PROVIDER_URL`, raw `MYSOUL_MODEL`, and `MYSOUL_API_KEY`. Explicitly set `MYSOUL_VALIDATE_PROVIDER=1` to run the marked provider contract test. Credentials are not persisted. |
+| Model | Configure **设置 → 模型服务**, or set `MYSOUL_MODEL_MODE=provider`, `MYSOUL_PROVIDER_URL`, raw `MYSOUL_MODEL`, and `MYSOUL_API_KEY` when no saved local model settings exist. The marked live contract test reads environment credentials and requires explicit `MYSOUL_VALIDATE_PROVIDER=1`. UI connection tests do not replace this gate. |
 | Full MemPalace | Install full upstream dependencies in a separate Python environment at a pinned, reviewed checkout. Set `MYSOUL_MEMORY_BACKEND=mempalace` and `MYSOUL_MEMPALACE_CONFIG` to a local JSON process configuration. Run the marked Chinese write/search/get/restart test. No lightweight replacement satisfies this gate. |
 | QQ | Verify the official NapCat deployment and version. Set `MYSOUL_PHONE_BACKEND=napcat`, endpoint/token variables, trusted owner ID, and comma-separated allowed group IDs. Group history polling is observe-only by default. No deployment, login, or live message was performed during development. |
 | Code execution | Disabled. No isolation backend is implemented. Skipped isolation tests cannot enable execution. |

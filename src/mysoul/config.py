@@ -1,4 +1,4 @@
-"""Trusted operator settings; credentials are resolved from the environment only."""
+"""Trusted runtime settings; model credentials live at the provider boundary."""
 
 import os
 from pathlib import Path
@@ -24,6 +24,7 @@ class Settings(Contract):
     recovery_per_hour: float = Field(default=0.4, ge=0, le=1)
     event_capacity: int = Field(default=256, ge=1, le=10000)
     model_mode: Literal["replay", "procedure-replay", "provider"] = "replay"
+    load_saved_model: bool = True
     memory_backend: Literal["fixture", "mempalace"] = "fixture"
     mempalace_config: Path | None = None
     news_sources: set[str] = Field(default_factory=set)
