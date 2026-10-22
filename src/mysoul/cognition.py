@@ -104,7 +104,7 @@ class CognitiveStore:
         if not context or context["scope"]["audience"] != "owner":
             return
         goal = self.store.goal(activity.goal_id)
-        text = json.dumps({"activity": activity.model_dump(mode="json"),
+        text = json.dumps({"activity": activity.model_dump(mode="json", exclude={"final_note"}),
                            "objective": goal.objective, "effects": [
                                {"id": req.action_id, "tool": req.tool, "outcome": res.outcome,
                                 "evidence_ref": res.evidence_ref, "error": res.error}
@@ -113,6 +113,53 @@ class CognitiveStore:
         ident = f"outcome:{activity_id}:{activity.cursor}:{activity.status}"
         with self.store.transaction() as db:
             self._insert(db, ident, activity_id, "outcome", text, Scope(), now())
+            def capture_result(key, content, provenance):
+                # Separate immutable sources keep large results windowable with provenance.
+                for offset in range(0, len(content), 60000):
+                    body = json.dumps(provenance | {
+                        "offset": offset, "total": len(content),
+                        "content": content[offset:offset + 60000],
+                    }, ensure_ascii=False)
+                    self._insert(db, key + f":{offset}", activity_id, "outcome",
+                                 body, Scope.model_validate(context["scope"]), now())
+
+            for request, result in self.store.effects_for_goal(goal.id):
+                if request.activity_id != activity_id or not Scope().admits(request.scope):
+                    continue
+                provenance = {"author": "tool", "tool": request.tool,
+                              "action_id": request.action_id, "outcome": result.outcome,
+                              "evidence_ref": result.evidence_ref}
+                if result.outcome != "confirmed":
+                    continue
+                evidence = self.store.evidence(result.evidence_ref) if result.evidence_ref else None
+                if evidence and not evidence.permitted(Scope()):
+                    continue
+                capture_result("outcome-tool:" + request.action_id, result.content, provenance)
+                if evidence and evidence.text != result.content:
+                    capture_result("outcome-evidence:" + request.action_id, evidence.text,
+                                   provenance | {"source": evidence.source})
+            if activity.final_note:
+                capture_result("outcome-note:" + activity_id, activity.final_note,
+                               {"author": "model", "status": activity.status})
+
+    def recover_unfinished(self):
+        # This runs under the service lease on every startup, independently of legacy migration.
+        with self.store.transaction() as db:
+            for segment in self.store.all("recap_segment"):
+                if segment["status"] != "pending":
+                    continue
+                ref = segment["id"]
+                row = db.execute("SELECT body FROM events WHERE id=?", (ref,)).fetchone()
+                if not row or self.store.get("interaction", ref):
+                    continue
+                event = Event.model_validate_json(row[0])
+                if event.source == "local-initiative":
+                    continue
+                self._insert(db, "experience:" + ref + ":user", ref, "user",
+                             event.content, event.scope, event.received_at)
+                self._insert(db, "experience:" + ref + ":failure", ref, "failure",
+                             "Interaction unfinished at restart; no confirmed reply.",
+                             event.scope, event.received_at)
 
     def migrate_pending(self):
         if self.store.get("cognitive_migration", "v1") is not None:
@@ -314,7 +361,9 @@ class CognitiveService:
             context = self.context(run, (
                 "[persona-reflection] Reflect on this admitted experience window. Return only "
                 "evidence-supported changes or no changes with a reason. Changes replace a field's "
-                "whole text; preserve existing supported content. Allowed targets: identity, "
+                "whole text except WORLD; preserve existing supported content. WORLD text is an "
+                "addition merged with its unseen base, never a replacement. Allowed targets: "
+                "identity, "
                 "relationship, dark, world, user_observations. Redline, Mission, Dream, public "
                 "persona and owner-written USER text are protected. These cannot change tools, "
                 "permissions or runtime rules. User observations are model inferences, not facts. "

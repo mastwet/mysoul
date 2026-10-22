@@ -132,6 +132,7 @@ class ActivityRecord(Contract):
     dispatch_epoch: int = 0
     skill_version: str = "initial"
     effect_ids: list[str] = Field(default_factory=list)
+    final_note: str = Field(default="", max_length=64000)
     continuation: Literal["continue", "replan", "abandon"] | None = None
 
 

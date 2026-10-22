@@ -247,6 +247,8 @@ class Executor:
                         self.store.save_activity(latest)
                         return self._finish(latest, "suspended")
                     self.store.put("activity_context", activity.id, context.model_dump(mode="json"))
+                if output["decision"]["done"]:
+                    latest.final_note = output["decision"].get("note", "")
                 latest.cursor += 1
                 latest.checkpoint_ref = activity.id
                 self.store.save_activity(latest)

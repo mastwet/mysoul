@@ -185,11 +185,17 @@ class PersonaStore:
                         if not self.store.evidence(ref).permitted(Scope()):
                             raise ValueError("Persona evidence scope denied")
                     target = values if change.target == "user_observations" else values["sections"]
+                    new_text = change.text
+                    if change.target == "world":
+                        old = target[change.target]
+                        addition = change.text.strip()
+                        new_text = old if not addition or addition in old.split("\n\n") else (
+                            old + "\n\n" + addition if old else addition)
                     record["changes"].append({"target": change.target,
-                                              "old": target[change.target], "new": change.text,
+                                              "old": target[change.target], "new": new_text,
                                               "reason": change.reason,
                                               "evidence_refs": change.evidence_refs})
-                    target[change.target] = change.text
+                    target[change.target] = new_text
                 changed = values != current.model_dump()
                 if changed:
                     values["version"] += 1

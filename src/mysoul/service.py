@@ -133,6 +133,7 @@ class SoulService:
             self.persona.initialize()
             self._backfill_dialogue()
             self.cognition.sources.migrate_pending()
+            self.cognition.sources.recover_unfinished()
             if self.settings.memory_backend == "mempalace":
                 from mysoul.mempalace import MemPalaceProcess
 

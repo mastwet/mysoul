@@ -66,7 +66,8 @@ async def test_rollback_publishes_new_version_and_world_stays_out_of_payload(tmp
         soul.store.add_evidence(Evidence(id="source", text="world"))
         before = soul.persona.current()
         soul.persona.apply_evolution(0, 0, "world", [proposal("world")], ["source"])
-        assert soul.persona.current().sections.world == "PRIVATE_OBSERVATION"
+        assert soul.persona.current().sections.world == (
+            before.sections.world + "\n\nPRIVATE_OBSERVATION")
         assert "PRIVATE_OBSERVATION" not in (await soul.context(Scope())).instructions
         rolled = soul.persona.rollback(1, 0)
         assert rolled.version == 2
