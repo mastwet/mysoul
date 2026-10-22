@@ -501,6 +501,20 @@ class SoulService:
         )
         return proposal
 
+    async def test_candidate(self, proposal_id, cases=None):
+        from mysoul.evolution import CandidateRunner, ProcedureReplayModel
+
+        factory = ProcedureReplayModel
+        label = "procedure-replay"
+        if self.settings.model_mode == "provider":
+            from mysoul.provider import OpenAICompatibleModel
+
+            factory = OpenAICompatibleModel.from_environment
+            label = getattr(self.model, "model", "configured-provider")
+        return await CandidateRunner(
+            self.skills, model_factory=factory, cases=cases, model_label=label, budget_owner=self
+        ).run(proposal_id)
+
     def status(self):
         with self.store.lock:
             from mysoul.domain import ToolResult

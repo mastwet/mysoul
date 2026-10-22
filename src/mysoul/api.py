@@ -13,7 +13,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from mysoul.config import Settings
 from mysoul.domain import Contract, Goal
-from mysoul.evolution import CandidateRunner
+from mysoul.evolution import RegressionCase
 from mysoul.service import SoulService
 from mysoul.storage import Conflict
 
@@ -39,6 +39,10 @@ class ProposalInput(Contract):
 
 class ReflectionInput(Contract):
     evidence_refs: list[str]
+
+
+class CandidateInput(Contract):
+    cases: list[RegressionCase] = Field(default_factory=list, max_length=4)
 
 
 class ApprovalInput(Contract):
@@ -284,8 +288,8 @@ def create_app(settings: Settings | None = None, *, token=None, service=None):
         return app.state.soul.skills.rollback("work", body.target_version)
 
     @app.post("/api/skills/{proposal_id}/test", dependencies=guard)
-    async def test_candidate(proposal_id: str):
-        return await CandidateRunner(app.state.soul.skills).run(proposal_id)
+    async def test_candidate(proposal_id: str, body: CandidateInput):
+        return await app.state.soul.test_candidate(proposal_id, body.cases or None)
 
     @app.post("/api/skills/{proposal_id}/approve", dependencies=guard)
     async def approve(proposal_id: str, body: ApprovalInput):

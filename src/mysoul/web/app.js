@@ -92,7 +92,7 @@ function renderSkills(data){
   const box=$("proposals");box.replaceChildren();
   for(const p of data.proposals.slice().reverse()){
     const row=node("article",undefined,"proposal"),heading=node("div",undefined,"job-title");heading.append(node("strong",`工作技能 · ${p.candidate_hash.slice(0,8)}`),node("span",p.status==="active"?"已启用":statusNames[p.status]||p.status));row.append(heading,node("pre",p.diff,"diff"));
-    const runs=data.tests.filter(t=>p.test_run_ids.includes(t.id));for(const run of runs)row.append(node("p",`客观断言：${run.objective_pass?"通过":"失败"}\n模型评价：${run.model_judgment||"未提供"}\n运行环境：独立离线回放`,"test-result"));
+    const runs=data.tests.filter(t=>p.test_run_ids.includes(t.id));for(const run of runs)row.append(node("p",`客观断言：${run.objective_pass?"通过":"失败"}\n模型评价：${run.model_judgment||"未提供"}\n测试模型：${run.model_label||"procedure-replay"}\n运行环境：独立工作区，发送通道关闭`,"test-result"));
     const actions=node("div",undefined,"actions");if(["proposed","tested"].includes(p.status)){actions.append(button("运行候选测试",()=>api(`skills/${p.id}/test`,{})));if(runs.length&&runs.every(r=>r.objective_pass))actions.append(button("审核并启用",()=>api(`skills/${p.id}/approve`,{expected_base_hash:p.base_hash,approved_candidate_hash:p.candidate_hash}),false));actions.append(button("拒绝提案",()=>api(`skills/${p.id}/reject`,{})));}row.append(actions);box.append(row);
   }
   if(!data.proposals.length)empty(box,"没有待审核提案。先积累经验，再提出有证据的改进。");
