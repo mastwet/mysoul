@@ -1,12 +1,14 @@
 import argparse
 import asyncio
 import json
+import sys
 from pathlib import Path
 
 from mysoul.config import Settings
 
 
 def main():
+    sys.stdout.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(description="mysoul: a bounded single-subject companion")
     parser.add_argument("command", choices=["serve", "replay"])
     parser.add_argument("--data-dir", type=Path)

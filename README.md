@@ -29,6 +29,7 @@ uv run pytest -m 'not live and not mempalace and not isolation' -q
 - [Implementation plan](docs/PLAN.md): architecture contracts, dependency order, implementation tasks, test gates, and operational setup.
 - [Architecture decisions](docs/DECISIONS.md): choices, tradeoffs, scope boundaries, and settings to validate.
 - [Validation record](docs/validation.md): actual tests, browser walkthrough and pending gates.
+- [Independent review](docs/review.md): findings, regression fixes and verification limits.
 - [Paired fatigue trace](docs/fatigue-comparison.json): measured synthetic scheduling comparison.
 
 The planned stack is Python, LangGraph OSS, SQLite, a thin LAPUTA layer, upstream MemPalace, and a PEN-style interface with NapCatQQ and replay backends. Skill evolution follows evidence, reflection, isolated tests, human review, activation, and rollback.

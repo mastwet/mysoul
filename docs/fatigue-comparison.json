@@ -1,5 +1,5 @@
 {
-  "method": "Same eight hourly events, deterministic model, isolated SQLite",
+  "method": "Eight hourly events, 45-minute fixture work, fatigue gain 0.8/h, recovery 0.4/h",
   "interpretation": "Synthetic scheduling comparison, not an intelligence or fatigue benchmark",
   "runs": [
     {
@@ -8,41 +8,41 @@
         {
           "hour": 0,
           "activity": "work",
-          "fatigue": 0.0
+          "fatigue": 0.6
         },
         {
           "hour": 1,
           "activity": "work",
-          "fatigue": 0.4
+          "fatigue": 1.0
         },
         {
           "hour": 2,
-          "activity": "work",
-          "fatigue": 0.8
+          "activity": "rest",
+          "fatigue": 0.9
         },
         {
           "hour": 3,
-          "activity": "rest",
+          "activity": "work",
           "fatigue": 1.0
         },
         {
           "hour": 4,
-          "activity": "work",
-          "fatigue": 0.6
+          "activity": "rest",
+          "fatigue": 0.9
         },
         {
           "hour": 5,
-          "activity": "rest",
+          "activity": "work",
           "fatigue": 1.0
         },
         {
           "hour": 6,
-          "activity": "work",
-          "fatigue": 0.6
+          "activity": "rest",
+          "fatigue": 0.9
         },
         {
           "hour": 7,
-          "activity": "rest",
+          "activity": "work",
           "fatigue": 1.0
         }
       ],

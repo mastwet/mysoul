@@ -83,13 +83,18 @@ class ContextAssembler:
         bundle.instructions += "\n" + self.public_persona
         if scope.audience == "owner":
             bundle.recap = version.text
+        bundle.recap_version = version.version
+        bundle.recap_invalidation_epoch = version.invalidation_epoch
         if len(bundle.payload()) > budget.max_chars:
             raise ContextOverflow("Required instructions/task/Recap exceed context budget")
         try:
             hits = await self.memory.search(self.task, scope, 10)
         except MemoryUnavailable:
             bundle.recall_status = "unavailable"
-            return bundle
+            hits = []
+        refresh_recap_context(self.recap.store, bundle)
+        if len(bundle.payload()) > budget.max_chars:
+            raise ContextOverflow("Committed context changed beyond admission budget")
         for hit in hits:
             if not hit.permitted(scope):
                 continue
@@ -98,3 +103,11 @@ class ContextAssembler:
             if len(candidate.payload()) <= budget.max_chars:
                 bundle = candidate
         return bundle
+
+
+def refresh_recap_context(store, bundle):
+    version = RecapStore(store).current()
+    bundle.recap = version.text if bundle.scope.audience == "owner" else ""
+    bundle.recap_version = version.version
+    bundle.recap_invalidation_epoch = version.invalidation_epoch
+    return bundle

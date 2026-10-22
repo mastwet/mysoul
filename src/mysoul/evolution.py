@@ -81,7 +81,23 @@ class CandidateRunner:
                     "limits": "8 steps, offline, temporary workspace",
                 }
         self.skills.store.put("skill_test", result["id"], result)
-        proposal.test_run_ids.append(result["id"])
-        proposal.status = "tested"
-        self.skills.store.put("proposal", proposal.id, proposal.model_dump(mode="json"))
+        with self.skills.store.transaction() as db:
+            from mysoul.domain import SkillProposal
+
+            current = SkillProposal.model_validate_json(
+                db.execute(
+                    "SELECT body FROM objects WHERE kind='proposal' AND id=?", (proposal.id,)
+                ).fetchone()[0]
+            )
+            if (
+                current.status not in {"proposed", "tested"}
+                or current.candidate_hash != proposal.candidate_hash
+            ):
+                raise Conflict("Proposal changed while candidate tests were running")
+            current.test_run_ids.append(result["id"])
+            current.status = "tested"
+            db.execute(
+                "UPDATE objects SET body=? WHERE kind='proposal' AND id=?",
+                (current.model_dump_json(), current.id),
+            )
         return result

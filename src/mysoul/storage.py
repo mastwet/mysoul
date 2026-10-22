@@ -140,6 +140,28 @@ class StateStore:
                 (kind, ident, json.dumps(value, ensure_ascii=False)),
             )
 
+    def put_new(self, kind: str, ident: str, value) -> bool:
+        with self.transaction() as db:
+            return (
+                db.execute(
+                    "INSERT OR IGNORE INTO objects VALUES(?,?,?)",
+                    (kind, ident, json.dumps(value, ensure_ascii=False)),
+                ).rowcount
+                == 1
+            )
+
+    def effects_for_goal(self, goal_id, tool=None):
+        from mysoul.domain import ToolRequest
+
+        with self.lock:
+            rows = self.db.execute("SELECT request,result FROM effects ORDER BY rowid").fetchall()
+        result = []
+        for request, receipt in rows:
+            request = ToolRequest.model_validate_json(request)
+            if request.goal_id == goal_id and (tool is None or request.tool == tool):
+                result.append((request, ToolResult.model_validate_json(receipt)))
+        return result
+
     def all(self, kind: str):
         with self.lock:
             return [

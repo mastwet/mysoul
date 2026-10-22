@@ -1,6 +1,7 @@
 from datetime import timedelta
 
 import httpx
+import pytest
 
 from mysoul.config import Settings
 from mysoul.domain import Scope, ToolRequest, now
@@ -79,3 +80,54 @@ async def test_duplicate_events_and_disconnect(tmp_path):
     phone.settings.send_enabled = True
     assert (await phone.act(request())).outcome == "unknown"
     await phone.close()
+
+
+@pytest.mark.live
+async def test_real_qq_observe_only():
+    import os
+
+    if os.environ.get("MYSOUL_VALIDATE_QQ") != "1":
+        pytest.skip("Explicit real QQ observation validation is not configured")
+    settings = Settings.from_environment()
+    phone = NapCatPhone(
+        os.environ["MYSOUL_NAPCAT_URL"], os.environ["MYSOUL_NAPCAT_TOKEN"], settings
+    )
+    try:
+        batch = await phone.observe(None)
+        assert all(event.scope.conversation in settings.allowed_groups for event in batch.events)
+    finally:
+        await phone.close()
+
+
+@pytest.mark.live
+async def test_real_qq_one_explicitly_authorized_send(tmp_path):
+    import os
+
+    if os.environ.get("MYSOUL_QQ_SMOKE_SEND") != "1":
+        pytest.skip("No explicit authorization for one real QQ smoke message")
+    from mysoul.domain import Goal
+    from mysoul.effects import EffectDispatcher
+    from mysoul.storage import StateStore
+
+    settings = Settings.from_environment()
+    group = os.environ["MYSOUL_QQ_TEST_GROUP"]
+    assert settings.send_enabled and group in settings.allowed_groups
+    store = StateStore(tmp_path / "qq-smoke.sqlite")
+    store.load_subject()
+    phone = NapCatPhone(
+        os.environ["MYSOUL_NAPCAT_URL"], os.environ["MYSOUL_NAPCAT_TOKEN"], settings
+    )
+    dispatcher = EffectDispatcher(store)
+    dispatcher.register("qq_send", phone.act, {"group"})
+    goal = Goal(objective="One authorized QQ smoke message", status="active")
+    store.save_goal(goal)
+    action = request(group)
+    action.goal_id = goal.id
+    action.arguments = {"text": "mysoul integration smoke test"}
+    try:
+        receipt = await dispatcher.dispatch(action)
+        assert receipt.outcome == "confirmed" and receipt.receipt
+        assert store.effect(action.action_id).receipt == receipt.receipt
+    finally:
+        await phone.close()
+        store.close()

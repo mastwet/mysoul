@@ -14,7 +14,7 @@ from mysoul.domain import (
 )
 from mysoul.effects import EffectDispatcher
 from mysoul.executor import Executor
-from mysoul.laputa import ContextAssembler, RecapStore
+from mysoul.laputa import ContextAssembler, ContextOverflow, RecapStore
 from mysoul.lease import SubjectLease
 from mysoul.life import LifeController
 from mysoul.memory import FixtureMemory
@@ -24,6 +24,7 @@ from mysoul.scheduler import Scheduler
 from mysoul.skills import SkillStore
 from mysoul.storage import StateStore
 from mysoul.tools.files import ReadArgs, WorkspaceFiles, WriteArgs
+from mysoul.tools.news import NewsReader
 
 
 class SoulService:
@@ -62,6 +63,21 @@ class SoulService:
         self.files = WorkspaceFiles(settings.data_dir / "workspace")
         self.effects.register("read_file", self._read_file, schema=ReadArgs.model_json_schema())
         self.effects.register("write_file", self._write_file, schema=WriteArgs.model_json_schema())
+        self.news = NewsReader(settings.news_sources)
+        if settings.news_sources:
+            self.effects.register(
+                "read_news",
+                self._read_news,
+                {"owner", "group", "public"},
+                schema={
+                    "type": "object",
+                    "properties": {
+                        "source": {"type": "string", "enum": sorted(settings.news_sources)}
+                    },
+                    "required": ["source"],
+                    "additionalProperties": False,
+                },
+            )
         if self.phone.capabilities["live"]:
             self.effects.register(
                 "qq_send",
@@ -84,6 +100,7 @@ class SoulService:
         self.lease = SubjectLease(settings.data_dir / "subject.lock")
         self.phone_cursor = (self.store.get("cursor", "phone") or {}).get("value")
         self.memory_process = None
+        self.owner_turns = 0
 
     async def __aenter__(self):
         try:
@@ -118,12 +135,22 @@ class SoulService:
         self.lease.release()
 
     async def tick(self):
+        try:
+            await self._phone_tick()
+        finally:
+            # Delivery is bounded and independent of ambient events and foreground work.
+            if self.settings.memory_backend == "mempalace":
+                from mysoul.memory import flush_memory_queue
+
+                await flush_memory_queue(self.store, self.memory)
+
+    async def _phone_tick(self):
         batch = await self.phone.observe(self.phone_cursor)
         self.store.enqueue_batch(batch.events, batch.cursor)
         for event in self.store.pending_events(self.settings.event_capacity):
             self.scheduler.offer(event.model_copy(update={"trust": "data"}))
         self.phone_cursor = batch.cursor
-        if self.executor.running:
+        if self.executor.running or self.owner_turns:
             return
         events = self.scheduler.drain()
         if not events:
@@ -136,14 +163,53 @@ class SoulService:
                 continue
             groups.setdefault(event.scope.model_dump_json(), []).append(event)
         for group in groups.values():
+            chunk = []
+            size = 0
+            for event in group:
+                if chunk and size + len(event.content) > 4000:
+                    await self._process_batch(chunk)
+                    chunk = []
+                    size = 0
+                chunk.append(event)
+                size += len(event.content)
+            if chunk:
+                await self._process_batch(chunk)
+
+    async def _process_batch(self, group):
+        if self.owner_turns:
+            return
+        epoch = self.store.load_subject().dispatch_epoch
+        try:
             context = await self.context(group[0].scope, "\n".join(e.content for e in group))
+            if self.store.load_subject().dispatch_epoch != epoch:
+                return
             decision = await self.life.choose(group, context)
             for event in group:
-                await self._ingest(event, decision=decision)
-        if self.settings.memory_backend == "mempalace":
-            from mysoul.memory import flush_memory_queue
-
-            await flush_memory_queue(self.store, self.memory)
+                selected = (
+                    decision
+                    if event is group[-1]
+                    else decision.model_copy(update={"chat_action": "silent", "reply": ""})
+                )
+                await self._ingest(event, decision=selected, admission_epoch=epoch)
+        except ContextOverflow:
+            # Retain full evidence and consume the bad batch so other scopes can progress.
+            for event in group:
+                self.store.add_evidence(
+                    Evidence(
+                        id=event.id, text=event.content, scope=event.scope, source=event.source
+                    )
+                )
+                self._record_interaction(
+                    event,
+                    {
+                        "choice": "silent",
+                        "event_id": event.id,
+                        "activity": "rest",
+                        "text": "",
+                        "input": event.content,
+                        "error": "context_overflow; retained for explicit operator review",
+                    },
+                )
 
     async def run_loop(self, stop):
         import asyncio
@@ -214,6 +280,26 @@ class SoulService:
                 action_id=request.action_id, outcome="failed", error=type(exc).__name__
             )
 
+    async def _read_news(self, request):
+        try:
+            if set(request.arguments) != {"source"}:
+                raise ValueError("One configured source required")
+            event = await self.news.read(request.arguments["source"])
+            evidence = Evidence(
+                id=event.id, text=event.content, scope=event.scope, source=event.source
+            )
+            self.store.add_evidence(evidence)
+            return ToolResult(
+                action_id=request.action_id,
+                outcome="confirmed",
+                content=event.content,
+                evidence_ref=evidence.id,
+            )
+        except (ValueError, OSError) as exc:
+            return ToolResult(
+                action_id=request.action_id, outcome="failed", error=type(exc).__name__
+            )
+
     async def receive(self, event: Event):
         # External callers never get to assert owner authority in an Event field.
         event = event.model_copy(update={"trust": "data"})
@@ -227,20 +313,56 @@ class SoulService:
             dedup_key=uid(),
             trust="owner_command",
         )
-        await self.executor.interrupt(event)
-        return await self._ingest(event)
+        self.owner_turns += 1
+        try:
+            await self.executor.interrupt(event)
+            return await self._ingest(event)
+        finally:
+            self.owner_turns -= 1
 
-    async def _ingest(self, event: Event, decision=None):
+    def _record_interaction(self, event, result):
+        self.store.put("interaction", event.id, result)
+        self.store.processed_event(event)
+        return result
+
+    def _reply_outcome(self, intent):
+        result = dict(intent["result"])
+        sends = self.store.effects_for_goal(intent["goal_id"], "qq_send")
+        for request, receipt in sends:
+            if receipt.outcome == "confirmed" and receipt.receipt:
+                result.update(choice="sent", text=request.arguments["text"])
+            elif receipt.outcome in {"unknown", "in_flight"}:
+                result.update(choice="unknown", text="Reply outcome is uncertain; no resend")
+        return result
+
+    async def _ingest(self, event: Event, decision=None, admission_epoch=None):
         if not self.store.add_event(event):
             canonical = self.store.event_for_dedup(event.dedup_key)
             if not canonical or self.store.get("interaction", canonical.id):
                 return {"choice": "duplicate", "event_id": event.id}
             event = canonical
+        intent = self.store.get("reply_intent", event.id)
+        if intent:
+            return self._record_interaction(event, self._reply_outcome(intent))
         self.store.add_evidence(
             Evidence(id=event.id, text=event.content, scope=event.scope, source=event.source)
         )
+        if admission_epoch is None:
+            admission_epoch = self.store.load_subject().dispatch_epoch
         if decision is None:
             context = await self.context(event.scope, event.content)
+            if self.store.load_subject().dispatch_epoch != admission_epoch:
+                return self._record_interaction(
+                    event,
+                    {
+                        "choice": "silent",
+                        "event_id": event.id,
+                        "activity": "rest",
+                        "text": "",
+                        "input": event.content,
+                        "error": "superseded",
+                    },
+                )
             decision = await self.life.choose([event], context)
         if event.trust == "owner_command":
             choice = "owner_served"
@@ -265,21 +387,33 @@ class SoulService:
             and self.settings.send_enabled
             and event.scope.audience == "group"
             and not self.executor.running
+            and not self.owner_turns
+            and self.store.load_subject().dispatch_epoch == admission_epoch
         ):
             context = await self.context(
                 event.scope, "Reply to this group using qq_send: " + decision.reply
             )
             goal = Goal(
+                id="reply-" + event.id,
                 objective="Reply to allowed group",
                 step_limit=3,
                 token_limit=16000,
                 skill_version=self.skills.active().content_hash,
             )
-            activity = await self.executor.start(goal, context)
-            receipts = [self.store.effect(ident) for ident in activity.effect_ids]
-            if any(result.outcome == "confirmed" and result.receipt for result in receipts):
-                choice = "sent"
-                text = decision.reply
+            if self.store.load_subject().dispatch_epoch == admission_epoch:
+                base = {
+                    "choice": "draft",
+                    "event_id": event.id,
+                    "activity": decision.activity,
+                    "text": text,
+                    "input": event.content,
+                }
+                intent = {"goal_id": goal.id, "result": base, "epoch": admission_epoch}
+                claimed = self.store.put_new("reply_intent", event.id, intent)
+                if claimed:
+                    await self.executor.start(goal, context, expected_epoch=admission_epoch)
+                result = self._reply_outcome(self.store.get("reply_intent", event.id))
+                return self._record_interaction(event, result)
         result = {
             "choice": choice,
             "event_id": event.id,
@@ -293,16 +427,17 @@ class SoulService:
                 event.id,
                 {"text": text, "scope": event.scope.model_dump(), "status": "draft"},
             )
-        self.store.put("interaction", event.id, result)
-        self.store.processed_event(event)
-        return result
+        return self._record_interaction(event, result)
 
     async def start_goal(self, goal: Goal):
-        context = await self.context(Scope(), goal.objective)
+        epoch = self.store.load_subject().dispatch_epoch
         version = self.skills.active()
+        context = await self.context(
+            Scope(), goal.objective + "\nCompletion: " + goal.completion_criteria
+        )
         goal.skill_version = version.content_hash
         context.skill = version.text
-        return await self.executor.start(goal, context)
+        return await self.executor.start(goal, context, expected_epoch=epoch)
 
     async def reflect(self, evidence_refs: list[str]):
         from mysoul.storage import Conflict

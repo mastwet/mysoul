@@ -68,7 +68,7 @@ async function refresh() {
 function renderMessages(interactions) {
   const box=$("messages");
   if(!interactions.length){empty(box,"安静的时候，可以好好休息。你随时可以开始一段对话。");return;}
-  box.replaceChildren(...interactions.map(item=>{const row=node("div",undefined,"message");row.append(node("small",item.choice==="owner_served"?"主人对话":item.choice==="silent"?"阅读 · 保持沉默":"草稿"),node("p",item.input||""));if(item.text)row.append(node("p",item.text));return row;}));
+  box.replaceChildren(...interactions.map(item=>{const row=node("div",undefined,"message");row.append(node("small",item.choice==="owner_served"?"主人对话":item.choice==="silent"?"阅读 · 保持沉默":item.choice==="sent"?"已发送":item.choice==="unknown"?"结果未知":"草稿"),node("p",item.input||""));if(item.text)row.append(node("p",item.text));return row;}));
 }
 function renderJobs(state) {
   const box=$("jobs"),effects=$("effects");box.replaceChildren();effects.replaceChildren();
@@ -91,7 +91,7 @@ function renderSkills(data){
   const previous=$("rollback-select").value;$("rollback-select").replaceChildren(...data.versions.map(v=>{const option=node("option",`${v.content_hash.slice(0,10)} · ${new Date(v.activated_at).toLocaleString()}`);option.value=v.content_hash;return option;}));if(data.versions.some(v=>v.content_hash===previous))$("rollback-select").value=previous;
   const box=$("proposals");box.replaceChildren();
   for(const p of data.proposals.slice().reverse()){
-    const row=node("article",undefined,"proposal"),heading=node("div",undefined,"job-title");heading.append(node("strong",`工作技能 · ${p.candidate_hash.slice(0,8)}`),node("span",statusNames[p.status]||p.status));row.append(heading,node("pre",p.diff,"diff"));
+    const row=node("article",undefined,"proposal"),heading=node("div",undefined,"job-title");heading.append(node("strong",`工作技能 · ${p.candidate_hash.slice(0,8)}`),node("span",p.status==="active"?"已启用":statusNames[p.status]||p.status));row.append(heading,node("pre",p.diff,"diff"));
     const runs=data.tests.filter(t=>p.test_run_ids.includes(t.id));for(const run of runs)row.append(node("p",`客观断言：${run.objective_pass?"通过":"失败"}\n模型评价：${run.model_judgment||"未提供"}\n运行环境：独立离线回放`,"test-result"));
     const actions=node("div",undefined,"actions");if(["proposed","tested"].includes(p.status)){actions.append(button("运行候选测试",()=>api(`skills/${p.id}/test`,{})));if(runs.length&&runs.every(r=>r.objective_pass))actions.append(button("审核并启用",()=>api(`skills/${p.id}/approve`,{expected_base_hash:p.base_hash,approved_candidate_hash:p.candidate_hash}),false));actions.append(button("拒绝提案",()=>api(`skills/${p.id}/reject`,{})));}row.append(actions);box.append(row);
   }

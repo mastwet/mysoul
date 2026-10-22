@@ -62,3 +62,24 @@ def test_hardlinks_are_not_write_targets(tmp_path):
     with pytest.raises(PermissionError):
         WorkspaceFiles(tmp_path).write("link", "replace")
     assert source.read_text() == "original"
+
+
+async def test_configured_news_tool_preserves_public_provenance(tmp_path):
+    from mysoul.config import Settings
+    from mysoul.domain import Goal, Scope, StepDecision
+    from mysoul.service import SoulService
+
+    source = "https://news.example/item"
+    async with SoulService(Settings(data_dir=tmp_path, news_sources={source})) as soul:
+
+        async def fixture(url):
+            return NewsReader.as_event(url, "public article text")
+
+        soul.news.read = fixture
+        soul.model.steps.extend(
+            [StepDecision(tool="read_news", arguments={"source": source}), StepDecision(done=True)]
+        )
+        assert (await soul.start_goal(Goal(objective="read a news source"))).status == "completed"
+        assert any(
+            e.scope.audience == "public" for e in await soul.memory.search("article", Scope(), 10)
+        )

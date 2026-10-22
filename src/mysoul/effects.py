@@ -55,6 +55,14 @@ class EffectDispatcher:
                     and request.scope.audience in self.audiences.get(request.tool, set())
                     and goal.elapsed_seconds < goal.time_limit
                 )
+                if allowed and request.tool == "qq_send" and request.goal_id.startswith("reply-"):
+                    previous_reply = db.execute(
+                        "SELECT 1 FROM effects WHERE json_extract(request,'$.goal_id')=? "
+                        "AND json_extract(request,'$.tool')='qq_send' "
+                        "AND json_extract(result,'$.outcome')!='not_sent' LIMIT 1",
+                        (request.goal_id,),
+                    ).fetchone()
+                    allowed = previous_reply is None
                 result = ToolResult(
                     action_id=request.action_id,
                     outcome="in_flight" if allowed else "not_sent",

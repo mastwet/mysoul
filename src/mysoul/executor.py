@@ -11,6 +11,7 @@ from langgraph.graph import END, START, StateGraph
 from mysoul.config import Settings
 from mysoul.domain import (
     TERMINAL,
+    Activity,
     ActivityRecord,
     ContextBundle,
     Event,
@@ -20,6 +21,8 @@ from mysoul.domain import (
     ToolRequest,
     now,
 )
+from mysoul.laputa import ContextOverflow, refresh_recap_context
+from mysoul.life import advance_fatigue
 from mysoul.model import reservation
 from mysoul.storage import Conflict
 
@@ -67,9 +70,13 @@ class Executor:
 
     async def _prepare(self, state: GraphState):
         limits = ModelLimits.model_validate(state["limits"])
+        context = ContextBundle.model_validate(state["context"])
+        current = refresh_recap_context(self.store, context.model_copy(deep=True))
+        if current.payload() != context.payload():
+            raise Conflict("Recap changed during model admission; resume with refreshed context")
         decision = await asyncio.wait_for(
             self.model.execute_step(
-                ContextBundle.model_validate(state["context"]),
+                context,
                 self.dispatcher.tool_specs(
                     ContextBundle.model_validate(state["context"]).scope.audience
                 ),
@@ -99,12 +106,18 @@ class Executor:
         result = await self.dispatcher.dispatch(request)
         return {"result": result.model_dump(mode="json")}
 
-    async def start(self, goal: Goal, context: ContextBundle | None = None) -> ActivityRecord:
+    async def start(
+        self, goal: Goal, context: ContextBundle | None = None, *, expected_epoch=None
+    ) -> ActivityRecord:
         if self.running:
             raise Conflict("One foreground goal at a time")
         if goal.status in TERMINAL:
             raise Conflict("Cannot start terminal goal")
         state = self.store.load_subject()
+        if expected_epoch is not None and state.dispatch_epoch != expected_epoch:
+            raise Conflict("Operation was interrupted during context preparation")
+        advance_fatigue(state, self.settings, self.clock())
+        state.activity = Activity.WORK
         goal.status = "active"
         self.store.save_goal(goal)
         activity = ActivityRecord(
@@ -149,6 +162,10 @@ class Executor:
                     context = ContextBundle.model_validate(
                         self.store.get("activity_context", activity.id)
                     )
+                    refresh_recap_context(self.store, context)
+                    if len(context.payload()) > 16000:
+                        raise ContextOverflow("Refreshed required context exceeds budget")
+                    self.store.put("activity_context", activity.id, context.model_dump(mode="json"))
                     reserve, attempts = reservation(
                         self.model,
                         context,
@@ -228,6 +245,9 @@ class Executor:
         except asyncio.CancelledError:
             self._finish(self.store.activity(activity_id), "suspended")
             raise
+        except (Conflict, ContextOverflow):
+            self._finish(self.store.activity(activity_id), "suspended")
+            raise
         except Exception:
             self._finish(self.store.activity(activity_id), "failed")
             raise
@@ -246,8 +266,11 @@ class Executor:
         self.store.save_goal(goal)
         self.store.save_activity(activity)
         state = self.store.load_subject()
-        if state.current_activity_id == activity.id and status in TERMINAL:
-            state.current_activity_id = None
+        if state.current_activity_id == activity.id:
+            advance_fatigue(state, self.settings, self.clock())
+            state.activity = Activity.REST
+            if status in TERMINAL:
+                state.current_activity_id = None
             self.store.save_transition(state.dispatch_epoch, state)
         return activity
 
@@ -297,5 +320,7 @@ class Executor:
         self.store.save_goal(goal)
         self.store.save_activity(activity)
         state.current_activity_id = activity.id
+        advance_fatigue(state, self.settings, self.clock())
+        state.activity = Activity.WORK
         self.store.save_transition(state.dispatch_epoch, state)
         return await self._run(activity.id)

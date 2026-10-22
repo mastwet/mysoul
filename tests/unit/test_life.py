@@ -88,3 +88,21 @@ async def test_all_five_activities_and_fatigue_ab(rig):
     assert store.load_subject().model_calls == 5
     life.settings.fatigue_enabled = False
     assert (await life.choose([])).activity == Activity.REST
+
+
+async def test_rest_deadline_wakes_once_and_quiet_mode_suppresses_ambient_calls(rig):
+    life, store, model, clock = rig
+    state = store.load_subject()
+    state.rest_until = clock[0] + timedelta(hours=1)
+    store.save_transition(0, state)
+    await life.choose([])
+    assert model.calls == 0
+    clock[0] += timedelta(hours=1)
+    await life.choose([])
+    await life.choose([])
+    assert model.calls == 1
+    state = store.load_subject()
+    state.mode = "quiet"
+    store.save_transition(state.dispatch_epoch, state)
+    await life.choose([Event(content="ambient chatter", dedup_key="quiet")])
+    assert model.calls == 1

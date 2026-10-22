@@ -1,5 +1,9 @@
 # Validation ledger
 
+Current result after independent review and fixes (2026-10-22): **98 passed, 8 skipped**.
+Ruff and JavaScript syntax checks pass. This is a Windows offline milestone;
+real integrations remain pending. See [review disposition](review.md) and [runbook](runbook.md).
+
 All results are local development evidence, not live deployment claims.
 
 ## T01
@@ -57,3 +61,14 @@ All results are local development evidence, not live deployment claims.
 - Paired fatigue experiment is in fatigue-comparison.json; it uses identical simulated events and deterministic fixture tasks, not human-fatigue or intelligence measurements.
 - Initial skill Markdown is packaged under src/mysoul/builtin/work.md so installed wheels retain the authoritative baseline. Runtime revisions stay in .local/skill-revisions.
 - Milestone: offline implementation available; real integration pending. Independent code review follows.
+
+## Final independent review and regression pass
+
+- Fresh reviewer found seven Important application-flow issues; all were reproduced with fixture transports and fixed in one pass.
+- Eleven initial regressions failed before fixes; all passed afterward. Further priority, repeated-send and rest-deadline regressions also went red to green.
+- Reported work-state and send-label issues were treated as Important because they affect fatigue and truthful effect reporting. Mode preferences and a one-time rest deadline are now wired; no reported minor was left deferred.
+- Final full suite: 98 passed, 8 skipped. The additional QQ observation/send tests are explicitly opt-in and were skipped; no live message was sent.
+- Allowlisted news registration passed a fixture-backed execution test, preserving public source provenance. No real source was enabled.
+- Installed wheel smoke verified SQL, built-in Markdown and web resources. CLI replay preserves Chinese UTF-8 output.
+- Browser walkthrough was repeated after restart on the final implementation; a responsive UI screenshot is saved in `assets/operator-ui.png`.
+- Details and verification boundaries: `review.md`. Source remains on the named feature branch; no merge, push, deployment or live account setup was performed.

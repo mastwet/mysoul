@@ -26,6 +26,7 @@ class Settings(Contract):
     model_mode: Literal["replay", "procedure-replay", "provider"] = "replay"
     memory_backend: Literal["fixture", "mempalace"] = "fixture"
     mempalace_config: Path | None = None
+    news_sources: set[str] = Field(default_factory=set)
 
     @classmethod
     def from_environment(cls):
@@ -43,6 +44,9 @@ class Settings(Contract):
         values = {field: os.environ[key] for key, field in mapping.items() if key in os.environ}
         values["allowed_groups"] = {
             g.strip() for g in os.environ.get("MYSOUL_ALLOWED_GROUPS", "").split(",") if g.strip()
+        }
+        values["news_sources"] = {
+            s.strip() for s in os.environ.get("MYSOUL_NEWS_SOURCES", "").split(",") if s.strip()
         }
         return cls.model_validate(values)
 

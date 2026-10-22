@@ -18,13 +18,19 @@ from mysoul.storage import StateStore
 async def trace(enabled):
     with TemporaryDirectory() as directory:
         root = Path(directory)
-        settings = Settings(data_dir=root, fatigue_enabled=enabled, fatigue_per_hour=0.4)
+        settings = Settings(data_dir=root, fatigue_enabled=enabled, fatigue_per_hour=0.8)
         store = StateStore(root / "state.sqlite")
         clock = [datetime(2026, 10, 22, tzinfo=UTC)]
         state = store.load_subject()
         state.updated_at = clock[0]
         store.save_transition(0, state)
-        model = ReplayModel()
+
+        class TimedModel(ReplayModel):
+            async def execute_step(self, *args):
+                clock[0] += timedelta(minutes=45)
+                return await super().execute_step(*args)
+
+        model = TimedModel()
         life = LifeController(store, model, settings, lambda: clock[0])
         executor = Executor(
             store, model, EffectDispatcher(store), root / "graph.sqlite", settings, lambda: clock[0]
@@ -33,18 +39,18 @@ async def trace(enabled):
         rows = []
         completed = 0
         for i in range(8):
+            clock[0] = datetime(2026, 10, 22, tzinfo=UTC) + timedelta(hours=i)
             model.decisions.append(ActivityDecision(activity=Activity.WORK))
             decision = await life.choose([Event(dedup_key=str(i), content="bounded fixture task")])
             if decision.activity == Activity.WORK:
                 result = await executor.start(
-                    Goal(objective="Complete one deterministic fixture step")
+                    Goal(objective="Complete one deterministic fixture step", time_limit=3600)
                 )
                 completed += int(result.status == "completed")
             state = store.load_subject()
             rows.append(
                 {"hour": i, "activity": decision.activity, "fatigue": round(state.fatigue, 3)}
             )
-            clock[0] += timedelta(hours=1)
         await executor.close()
         result = {
             "fatigue_enabled": enabled,
@@ -61,7 +67,10 @@ async def main():
     print(
         json.dumps(
             {
-                "method": "Same eight hourly events, deterministic model, isolated SQLite",
+                "method": (
+                    "Eight hourly events, 45-minute fixture work, "
+                    "fatigue gain 0.8/h, recovery 0.4/h"
+                ),
                 "interpretation": (
                     "Synthetic scheduling comparison, not an intelligence or fatigue benchmark"
                 ),
