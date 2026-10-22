@@ -149,8 +149,9 @@ async def consolidate_recap(soul, expected_epoch):
         max_tokens=soul.settings.model_output_limit, timeout=soul.settings.request_timeout
     )
     reserve, attempts = reservation(soul.model, context, limits, [])
-    if state.model_calls + attempts > soul.settings.model_call_limit or budget_exceeded(
-        state.tokens_used, reserve, soul.settings.token_budget
+    if (
+        budget_exceeded(state.model_calls, attempts, soul.settings.model_call_limit)
+        or budget_exceeded(state.tokens_used, reserve, soul.settings.token_budget)
     ):
         raise Conflict("Recap synthesis budget exhausted")
     state.model_calls += attempts

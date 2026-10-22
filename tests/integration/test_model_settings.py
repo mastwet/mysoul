@@ -275,7 +275,8 @@ def test_old_saved_settings_keep_runtime_budget_until_explicitly_changed(tmp_pat
         assert client.get("/api/model").json()["token_budget"] == 7000
 
 
-async def test_unlimited_work_and_recap_run_above_previous_token_ceiling(tmp_path):
+@pytest.mark.parametrize("call_limit", [100, None])
+async def test_unlimited_work_and_recap_run_above_previous_token_ceiling(tmp_path, call_limit):
     from mysoul.domain import ContextBundle, Event, Goal
     from mysoul.evolution import ProcedureReplayModel
     from mysoul.laputa import consolidate_recap
@@ -285,9 +286,12 @@ async def test_unlimited_work_and_recap_run_above_previous_token_ceiling(tmp_pat
             assert limits.max_tokens is None
             return await super().execute_step(context, tool_specs, limits)
 
-    async with SoulService(Settings(data_dir=tmp_path, token_budget=None), model=Model()) as soul:
+    async with SoulService(
+        Settings(data_dir=tmp_path, token_budget=None, model_call_limit=call_limit), model=Model(),
+    ) as soul:
         state = soul.store.load_subject()
         state.tokens_used = 1_000_000
+        state.model_calls = 1000 if call_limit is None else 0
         soul.store.save_transition(state.dispatch_epoch, state)
         activity = await soul.start_goal(Goal(objective="Write report.txt", token_limit=None))
         assert activity.status == "completed"
@@ -447,3 +451,13 @@ def test_failed_probe_is_not_retried_or_saved_and_key_is_not_in_error(tmp_path, 
         assert clients[0].is_closed
         assert client.get("/api/model").json()["mode"] == "replay"
         assert not (tmp_path / "model.settings").exists()
+
+
+def test_probe_runs_above_old_call_ceiling_with_unlimited_calls(tmp_path, provider):
+    with connect(Settings(data_dir=tmp_path, model_call_limit=None, token_budget=None)) as client:
+        soul = client.app.state.soul
+        state = soul.store.load_subject()
+        state.model_calls = 1000
+        soul.store.save_transition(state.dispatch_epoch, state)
+        assert client.post("/api/model/test", json=values()).status_code == 200
+        assert soul.store.load_subject().model_calls == 1001

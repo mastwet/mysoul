@@ -17,7 +17,8 @@ class Settings(Contract):
     backend: Literal["replay", "napcat"] = "replay"
     send_enabled: bool = False
     allowed_groups: set[str] = Field(default_factory=set)
-    model_call_limit: int = Field(default=100, ge=0)
+    operator_auth_required: bool = True
+    model_call_limit: int | None = Field(default=100, ge=0)
     token_budget: int | None = Field(default=50000, ge=0)
     model_output_limit: int | None = Field(default=None, ge=1)
     context_chars: int = Field(default=131072, ge=4096, le=2097152)
@@ -43,9 +44,12 @@ class Settings(Contract):
             "MYSOUL_MEMORY_BACKEND": "memory_backend",
             "MYSOUL_MEMPALACE_CONFIG": "mempalace_config",
             "MYSOUL_MODEL_CALL_LIMIT": "model_call_limit",
+            "MYSOUL_OPERATOR_AUTH_REQUIRED": "operator_auth_required",
             "MYSOUL_TOKEN_BUDGET": "token_budget",
         }
         values = {field: os.environ[key] for key, field in mapping.items() if key in os.environ}
+        if str(values.get("model_call_limit", "")).strip().lower() == "unlimited":
+            values["model_call_limit"] = None
         values["allowed_groups"] = {
             g.strip() for g in os.environ.get("MYSOUL_ALLOWED_GROUPS", "").split(",") if g.strip()
         }

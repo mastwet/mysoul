@@ -19,6 +19,17 @@ uv sync --locked --extra dev
 uv run python -m mysoul serve
 ```
 
+For local testing without an operator token or a cumulative model-call ceiling:
+
+```powershell
+uv run python -m mysoul serve --local-test
+```
+
+This opens the loopback UI directly. Origin/CSRF checks and per-task execution
+bounds remain active. Token/output settings are configured separately in the UI.
+Use the same flag on subsequent launches; omit it to restore default token access
+and the default call budget. Existing counters and conversations are retained.
+
 Open the local access URL printed by the command. Defaults use deterministic replay;
 no credentials or QQ account are needed. See [operations and recovery](docs/runbook.md)
 for a file-work demonstration, real integration setup and recovery procedures.

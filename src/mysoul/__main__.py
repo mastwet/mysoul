@@ -14,18 +14,24 @@ def main():
     parser.add_argument("--data-dir", type=Path)
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--trace", type=Path)
+    parser.add_argument("--local-test", action="store_true",
+                        help="Loopback testing without operator token or model-call ceiling")
     args = parser.parse_args()
     settings = Settings.from_environment()
     if args.data_dir:
         settings.data_dir = args.data_dir
     settings.port = args.port
+    if args.local_test:
+        settings.operator_auth_required = False
+        settings.model_call_limit = None
     if args.command == "serve":
         import uvicorn
 
         from mysoul.api import create_app, operator_token
 
-        token = operator_token(settings)
-        print(f"Open http://127.0.0.1:{settings.port}/#token={token}", flush=True)
+        token = operator_token(settings) if settings.operator_auth_required else None
+        fragment = f"#token={token}" if token else ""
+        print(f"Open http://127.0.0.1:{settings.port}/{fragment}", flush=True)
         uvicorn.run(
             create_app(settings, token=token),
             host=settings.host,

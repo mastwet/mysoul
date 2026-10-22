@@ -1,4 +1,4 @@
-"""Loopback operator API. All private reads and mutations require local authorization."""
+"""Loopback operator API with explicit tokenless testing and guarded mutations."""
 
 import asyncio
 import secrets
@@ -90,7 +90,7 @@ def operator_token(settings):
 
 def create_app(settings: Settings | None = None, *, token=None, service=None):
     settings = settings or Settings()
-    token = token or operator_token(settings)
+    token = (token or operator_token(settings)) if settings.operator_auth_required else None
     csrf = secrets.token_urlsafe(32)
     jobs: set[asyncio.Task] = set()
 
@@ -133,7 +133,7 @@ def create_app(settings: Settings | None = None, *, token=None, service=None):
 
     async def authorize(request: Request):
         bearer = request.headers.get("authorization", "")
-        if not secrets.compare_digest(bearer, "Bearer " + token):
+        if token is not None and not secrets.compare_digest(bearer, "Bearer " + token):
             raise HTTPException(401, "Local operator authorization required")
         if request.method != "GET":
             if request.headers.get("origin") not in origins:
@@ -209,7 +209,7 @@ def create_app(settings: Settings | None = None, *, token=None, service=None):
 
     @app.get("/api/session", dependencies=guard)
     async def session():
-        return {"csrf": csrf}
+        return {"csrf": csrf, "auth_required": settings.operator_auth_required}
 
     @app.get("/api/status", dependencies=guard)
     async def status():

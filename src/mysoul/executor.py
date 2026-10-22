@@ -185,7 +185,7 @@ class Executor:
                         self.dispatcher.tool_specs(context.scope.audience),
                     )
                     if (
-                        state.model_calls + attempts > self.settings.model_call_limit
+                        budget_exceeded(state.model_calls, attempts, self.settings.model_call_limit)
                         or budget_exceeded(state.tokens_used, reserve, self.settings.token_budget)
                         or budget_exceeded(goal.tokens_used, reserve, goal.token_limit)
                     ):

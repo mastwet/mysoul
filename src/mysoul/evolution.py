@@ -70,7 +70,7 @@ class BudgetedCandidateModel:
         reserve, attempts = reservation(self.model, context, limits, tool_specs)
         if state.dispatch_epoch != self.epoch:
             raise Conflict("Candidate evaluation superseded")
-        if (state.model_calls + attempts > self.owner.settings.model_call_limit
+        if (budget_exceeded(state.model_calls, attempts, self.owner.settings.model_call_limit)
                 or budget_exceeded(state.tokens_used, reserve, self.owner.settings.token_budget)):
             raise Conflict("Candidate evaluation budget exhausted")
         state.model_calls += attempts
@@ -168,7 +168,7 @@ class CandidateRunner:
         if self.budget_owner:
             state = self.budget_owner.store.load_subject()
             epoch = state.dispatch_epoch
-            if (state.model_calls >= self.budget_owner.settings.model_call_limit
+            if (budget_reached(state.model_calls, self.budget_owner.settings.model_call_limit)
                     or budget_reached(state.tokens_used, self.budget_owner.settings.token_budget)):
                 raise Conflict("Candidate evaluation budget exhausted")
         base = self.skills.store.get("skill_version", proposal.base_hash)

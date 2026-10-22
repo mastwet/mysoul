@@ -165,8 +165,11 @@ Quiet/focused mode, high fatigue, active owner/work execution and exhausted
 budgets can defer checks. A finite model-call budget is cumulative, including
 quiet/failed checks: the default 100 calls supports at most five hours at a
 three-minute cadence from a fresh counter, before other model work is counted.
-Inspect Settings and the call budget if checks stop. Configure a suitable trusted
-`MYSOUL_MODEL_CALL_LIMIT` before restarting for a longer run. Do not reset stored
+Inspect Settings and the call budget if checks stop. For local testing, start with `--local-test` to disable the operator-token
+requirement and cumulative call ceiling. Alternatively, set
+`MYSOUL_MODEL_CALL_LIMIT=unlimited` to disable only that ceiling, or use a finite
+integer for a longer run. `MYSOUL_OPERATOR_AUTH_REQUIRED=false` controls tokenless
+loopback access separately. Keep the chosen flags/environment on each restart. Do not reset stored
 counters or force repeated retries to conceal failures. A failed request leaves
 the next scheduled attempt available; inspect the configured model gateway when
 failures recur.

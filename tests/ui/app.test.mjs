@@ -14,8 +14,8 @@ async function until(predicate) {
   for(let i=0;i<100;i++){if(predicate())return;await new Promise(resolve=>setImmediate(resolve));}
   assert.ok(predicate(),"UI did not settle");
 }
-async function fixture(chat,modelRequest) {
-  const dom=new JSDOM(html,{url:"http://127.0.0.1:8765/#token=fixture-token",runScripts:"outside-only",pretendToBeVisual:true});
+async function fixture(chat,modelRequest,{tokenless=false}={}) {
+  const dom=new JSDOM(html,{url:tokenless?"http://127.0.0.1:8765/":"http://127.0.0.1:8765/#token=fixture-token",runScripts:"outside-only",pretendToBeVisual:true});
   const {window}=dom,document=window.document;
   const server={state:{fatigue:0,activity:"rest",mode:"normal",autonomy_enabled:true,autonomy_interval_minutes:360,next_initiative_at:null,autonomy_last_checked_at:null,autonomy_last_result:"waiting",model_calls:0,tokens_used:0},limits:{model_calls:100,tokens:50000,context_chars:131072,request_timeout:120},backend:"replay",send_enabled:false,persona:{version:0,public:"A companion",sections:{identity:"identity",relationship:"relationship",redline:"redline",user:"user",world:"world",dream:"dream",dark:"dark",mission:"mission"}},personaHistory:[{version:0,public:"A companion"}],memory:{backend:"local",method:"local lexical",evidence_count:0,pending_mempalace_sync:0,last_context:null},recap:{version:0,text:"",refs:[]},gates:{provider:"deferred",mempalace:"deferred",qq:"deferred",isolation:"disabled"},goals:[],activities:[],interactions:[],drafts:[],effects:[]};
   const sends=[],writes=[],historyReads=[];let pollCallback=()=>{};
@@ -27,7 +27,7 @@ async function fixture(chat,modelRequest) {
   window.setInterval=callback=>{pollCallback=callback;return 0;};
   window.fetch=async(path,options)=>{
     let result;
-    if(path==="/api/session")result={csrf:"fixture-csrf"};
+    if(path==="/api/session")result={csrf:"fixture-csrf",auth_required:!tokenless};
     else if(path==="/api/status")result=server;
     else if(path==="/api/chat"){
       const body=JSON.parse(options.body);sends.push(body.text);const custom=chat?await chat(body.text):null;
@@ -359,5 +359,21 @@ test("three-minute heartbeat is selectable, persisted and displayed in minutes",
     await until(()=>ui.writes.some(item=>item.path==="/api/life")&&!d.getElementById("life-form").hasAttribute("aria-busy"));
     assert.equal(ui.writes.at(-1).body.autonomy_interval_minutes,3);
     assert.match(d.getElementById("initiative-status").textContent,/每 3 分钟/);
+  }finally{ui.close();}
+});
+
+
+test("tokenless local test opens directly and unlimited calls do not pause initiative",async()=>{
+  const ui=await fixture(undefined,undefined,{tokenless:true});
+  try{
+    assert.equal(ui.document.getElementById("login").hidden,true);
+    ui.server.state.model_calls=1000;ui.server.limits.model_calls=null;
+    ui.server.persona.version++;
+    await ui.poll();
+    assert.match(ui.document.getElementById("initiative-status").textContent,/自主发起已开启/);
+    assert.match(ui.document.getElementById("budget-calls").textContent,/不限/);
+    ui.send("免令牌测试");
+    await until(()=>!ui.textarea.disabled);
+    assert.equal(ui.sends.length,1);
   }finally{ui.close();}
 });

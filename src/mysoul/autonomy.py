@@ -112,7 +112,7 @@ class ActivityRouter:
             return
         expired = state.rest_until is not None and state.rest_until <= now()
         if ((state.mode == "quiet" and not expired) or state.fatigue >= 0.9
-                or state.model_calls >= soul.settings.model_call_limit
+                or budget_reached(state.model_calls, soul.settings.model_call_limit)
                 or budget_reached(state.tokens_used, soul.settings.token_budget)):
             # Cheap gates must not consume the signal they have not admitted.
             await soul.life.choose([])

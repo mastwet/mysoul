@@ -74,13 +74,13 @@ function notice(text) {
 }
 $("dismiss-notice").addEventListener("click",()=>notice(""));
 async function api(path, body) {
-  const headers={Authorization:`Bearer ${token}`};
+  const headers=token?{Authorization:`Bearer ${token}`} : {};
   if(body!==undefined){headers["Content-Type"]="application/json";headers["X-CSRF-Token"]=csrf;}
   let response;
   try{response=await fetch(`/api/${path}`,{method:body===undefined?"GET":"POST",headers,body:body===undefined?undefined:JSON.stringify(body)});}
   catch{throw new Error("连接中断，请检查本地服务后重试。输入已保留。");}
   let result;try{result=await response.json();}catch{throw new Error("服务响应不可用，请稍后重试。");}
-  if(!response.ok)throw new Error(response.status===409?"状态已变化或主体正忙，请稍后重试。当前输入已保留。":response.status===401?"操作令牌不可用，请使用启动时的本机访问链接。":typeof result.detail==="string"?result.detail:`请求失败（${response.status}）`);
+  if(!response.ok)throw Object.assign(new Error(response.status===409?"状态已变化或主体正忙，请稍后重试。当前输入已保留。":response.status===401?"操作令牌不可用，请使用启动时的本机访问链接。":typeof result.detail==="string"?result.detail:`请求失败（${response.status}）`),{status:response.status});
   return result;
 }
 async function busy(element, action) {
@@ -198,12 +198,13 @@ for(const id of ["status-dialog","settings-dialog"]){
   $(id).addEventListener("click",event=>{if(event.target!==$(id))return;const box=$(id).getBoundingClientRect();if(event.clientX<box.left||event.clientX>box.right||event.clientY<box.top||event.clientY>box.bottom)$(id).close();});
 }
 
-async function login() {
+async function login(automatic=false) {
   try{
-    csrf=(await api("session")).csrf;
-    try{sessionStorage.setItem("mysoul-token",token);}catch{}
+    const session=await api("session");csrf=session.csrf;
+    if(session.auth_required===false)token="";
+    try{if(token)sessionStorage.setItem("mysoul-token",token);else sessionStorage.removeItem("mysoul-token");}catch{}
     $("login").hidden=true;$("workspace").hidden=false;syncSidebar();await refresh();
-  }catch(error){$("login-error").textContent=error.message;$("login-error").hidden=false;}
+  }catch(error){if(automatic&&!token&&error.status===401)return;$("login-error").textContent=error.message;$("login-error").hidden=false;}
 }
 bindForm("login-form",async()=>{token=$("token").value.trim();$("login-error").hidden=true;await login();});
 
@@ -262,7 +263,7 @@ function renderSnapshot(force=false) {
   if(!lifeDirty&&!busyScopes.has($("life-form"))){$("mode").value=state.mode;$("fatigue-input").value=percent;$("fatigue-range").value=percent;$("autonomy-enabled").checked=state.autonomy_enabled;$("autonomy-interval").value=String(state.autonomy_interval_minutes);}
   const initiativeCadence=state.autonomy_interval_minutes<60?state.autonomy_interval_minutes+" 分钟":state.autonomy_interval_minutes/60+" 小时";
   const initiativeOutcome={waiting:state.autonomy_last_checked_at?"正在检查":"等待首次检查",silent:"上次保持安静",message:"最近已主动发起",error:"上次检查失败",interrupted:"主人输入打断了检查",paused:"设置变化后已停止"}[state.autonomy_last_result]||"等待检查";
-  let initiativePauseReason=state.mode!=="normal"?modeNames[state.mode]+"模式":state.fatigue>=.9?"疲劳过高":state.model_calls>=limits.model_calls?"调用预算已用尽":limits.tokens!==null&&limits.tokens!==undefined&&state.tokens_used>=limits.tokens?"Token预算已用尽":"";
+  let initiativePauseReason=state.mode!=="normal"?modeNames[state.mode]+"模式":state.fatigue>=.9?"疲劳过高":limits.model_calls!==null&&limits.model_calls!==undefined&&state.model_calls>=limits.model_calls?"调用预算已用尽":limits.tokens!==null&&limits.tokens!==undefined&&state.tokens_used>=limits.tokens?"Token预算已用尽":"";
   $("initiative-status").textContent=!state.autonomy_enabled?"自主发起已暂停 · "+initiativeOutcome:initiativePauseReason?"自主发起暂停 · "+initiativePauseReason+" · "+initiativeOutcome:"自主发起已开启 · 每 "+initiativeCadence+" · "+initiativeOutcome;
   $("persona-view").textContent=snapshot.persona.public;
   $("persona-version").textContent=`当前版本 v${snapshot.persona.version} · 私密部分只加入主人上下文`;
@@ -484,5 +485,5 @@ bindForm("memory-search-form",async()=>{
 bindForm("proposal-form",async()=>{await api("skills/propose",{text:$("candidate-text").value,evidence_refs:[$("evidence-select").value]});$("candidate-text").value="";});
 $("reflect").addEventListener("click",()=>busy($("proposal-form"),()=>api("reflection",{evidence_refs:[$("evidence-select").value]})));
 bindForm("rollback-form",()=>api("skills/rollback",{target_version:$("rollback-select").value}));
-if(token)login();
+login(true);
 setInterval(()=>{if(!document.hidden)refresh();},2500);

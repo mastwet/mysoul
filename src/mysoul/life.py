@@ -59,7 +59,7 @@ class LifeController:
         reserve, attempts = reservation(self.model, context, limits)
         blocked = (
             (not events and not expired)
-            or state.model_calls + attempts > self.settings.model_call_limit
+            or budget_exceeded(state.model_calls, attempts, self.settings.model_call_limit)
             or budget_exceeded(state.tokens_used, reserve, self.settings.token_budget)
             or (state.fatigue >= 0.9 and not owner)
             or (

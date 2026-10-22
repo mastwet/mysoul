@@ -598,8 +598,9 @@ class SoulService:
         state = self.store.load_subject()
         if state.dispatch_epoch != epoch:
             raise Conflict("Reflection superseded during context preparation")
-        if state.model_calls + attempts > self.settings.model_call_limit or budget_exceeded(
-            state.tokens_used, reserve, self.settings.token_budget
+        if (
+            budget_exceeded(state.model_calls, attempts, self.settings.model_call_limit)
+            or budget_exceeded(state.tokens_used, reserve, self.settings.token_budget)
         ):
             raise Conflict("Reflection budget exhausted")
         state.activity = Activity.REFLECT
@@ -703,8 +704,9 @@ class SoulService:
             )
             reserve, attempts = reservation(model, context, limits)
             state = self.store.load_subject()
-            if state.model_calls + attempts > self.settings.model_call_limit or budget_exceeded(
-                state.tokens_used, reserve, self.settings.token_budget
+            if (
+                budget_exceeded(state.model_calls, attempts, self.settings.model_call_limit)
+                or budget_exceeded(state.tokens_used, reserve, self.settings.token_budget)
             ):
                 raise Conflict("Model probe budget exhausted")
             state.model_calls += attempts

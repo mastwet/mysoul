@@ -214,3 +214,32 @@ for commands, screenshot references, third-party notice and review boundaries.
   end of observation); heartbeat checks consume that budget. This verifies live
   scheduling/recovery and provider decisions, not guaranteed speech every cycle
   or full QQ/MemPalace/isolation acceptance. Skipped gates are not passes.
+
+
+## Explicit local testing without operator token or call ceiling (2026-10-22)
+
+- User explicitly requested both changes. Added `serve --local-test`, disabling
+  operator-token authentication and the cumulative model-call ceiling for that
+  launch. Normal launch defaults remain authenticated and limited to 100 calls.
+  Separate environment controls are documented. No credential, history, counter,
+  task bound, QQ permission or provider token setting is erased by this mode.
+- All cumulative call-budget admission sites now accept null, including life,
+  heartbeat, executor, Recap, reflection, candidate owner accounting and probes.
+  Candidate sandbox-local limits remain bounded. The UI attempts a local session
+  on load, enters directly when tokenless, and renders unlimited calls accurately.
+  Loopback bind, allowed Host, mutation Origin and CSRF validation remain active.
+- RED: 7 Python regressions failed for unsupported settings/CLI and 1 UI test
+  failed to enter without a token. GREEN: **193 Python passed, 8 gated skips**;
+  **24 UI tests passed**; Ruff, JavaScript syntax, diff whitespace and offline
+  source/wheel build passed. Independent review found no important issue.
+- Restarted the existing service on port 8767 with its existing data directory
+  and `--local-test`. Unauthenticated session/status requests returned 200,
+  auth_required=false, model_calls=null and the already-unlimited tokens=null.
+  A new browser tab with no token fragment entered directly and displayed
+  `59 / 不限`; autonomy remained enabled every 3 minutes and its next natural
+  check completed quietly. No additional owner-chat test message was added.
+- A local restart helper was saved outside Git at
+  `C:/Users/Administrator/Desktop/mysoul/.local/start-local-test.ps1` so the
+  current worktree, data directory, port and testing flags can be reused.
+  Screenshot is in that local folder as `local-test-unlimited.png`. This change
+  does not count skipped QQ, MemPalace or isolation gates as passes.

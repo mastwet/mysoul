@@ -25,11 +25,15 @@ class InitiativeModel(ReplayModel):
         return ActivityDecision(activity=Activity.REST)
 
 
-async def test_idle_creates_one_persisted_main_chat_initiative(tmp_path):
+@pytest.mark.parametrize("call_limit", [100, None])
+async def test_idle_creates_one_persisted_main_chat_initiative(tmp_path, call_limit):
     model = InitiativeModel()
-    async with SoulService(Settings(data_dir=tmp_path), model=model) as soul:
+    async with SoulService(
+        Settings(data_dir=tmp_path, model_call_limit=call_limit), model=model,
+    ) as soul:
         state = soul.store.load_subject()
         state.autonomy_enabled = True
+        state.model_calls = 1000 if call_limit is None else 0
         state.next_initiative_at = now() - timedelta(seconds=1)
         soul.store.save_transition(state.dispatch_epoch, state)
 
@@ -52,7 +56,9 @@ async def test_idle_creates_one_persisted_main_chat_initiative(tmp_path):
         await soul.activities.idle()
         assert model.calls == 1
 
-    async with SoulService(Settings(data_dir=tmp_path), model=InitiativeModel()) as restarted:
+    async with SoulService(
+        Settings(data_dir=tmp_path, model_call_limit=call_limit), model=InitiativeModel(),
+    ) as restarted:
         await restarted.activities.idle()
         assert restarted.model.calls == 0
 
