@@ -2,10 +2,12 @@
 
 from mysoul.config import Settings
 from mysoul.domain import (
+    Activity,
     ContextBudget,
     Event,
     Evidence,
     Goal,
+    ModelLimits,
     Scope,
     ToolResult,
     uid,
@@ -18,6 +20,7 @@ from mysoul.memory import FixtureMemory
 from mysoul.model import ReplayModel
 from mysoul.phone.replay import ReplayPhone
 from mysoul.scheduler import Scheduler
+from mysoul.skills import SkillStore
 from mysoul.storage import StateStore
 from mysoul.tools.files import ReadArgs, WorkspaceFiles, WriteArgs
 
@@ -33,6 +36,8 @@ class SoulService:
             raise ValueError("Phone backend differs from trusted runtime configuration")
         self.memory = FixtureMemory(self.store)
         self.recap = RecapStore(self.store)
+        self.skills = SkillStore(self.store, settings.data_dir / "skill-revisions")
+        self.skills.initialize()
         self.life = LifeController(self.store, self.model, settings)
         self.scheduler = Scheduler(settings.event_capacity)
         self.effects = EffectDispatcher(self.store)
@@ -161,7 +166,49 @@ class SoulService:
 
     async def start_goal(self, goal: Goal):
         context = await self.context(Scope(), goal.objective)
+        version = self.skills.active()
+        goal.skill_version = version.content_hash
+        context.skill = version.text
         return await self.executor.start(goal, context)
+
+    async def reflect(self, evidence_refs: list[str]):
+        from mysoul.storage import Conflict
+
+        if self.executor.running:
+            raise Conflict("Interrupt foreground work before reflection")
+        if not evidence_refs:
+            raise ValueError("Reflection requires evidence")
+        evidence = [self.store.evidence(ref) for ref in evidence_refs]
+        context = await self.context(Scope(), "Propose one revised work skill as Markdown in note.")
+        context.instructions += (
+            "\n[reflection] Evolve procedures only; no authority or runtime edits."
+        )
+        context.evidence = evidence
+        if len(context.payload()) > 16000:
+            raise ValueError("Reflection evidence exceeds context budget")
+        limits = ModelLimits(retries=0)
+        state = self.store.load_subject()
+        if (
+            state.model_calls >= self.settings.model_call_limit
+            or state.tokens_used + limits.max_tokens > self.settings.token_budget
+        ):
+            raise Conflict("Reflection budget exhausted")
+        state.activity = Activity.REFLECT
+        state.model_calls += 1
+        state.tokens_used += limits.max_tokens
+        self.store.save_transition(state.dispatch_epoch, state)
+        import asyncio
+
+        result = await asyncio.wait_for(
+            self.model.execute_step(context, [], limits), limits.timeout
+        )
+        if self.store.load_subject().dispatch_epoch != state.dispatch_epoch:
+            raise Conflict("Reflection superseded by owner input")
+        proposal = self.skills.propose(result.note, evidence_refs)
+        self.store.put(
+            "reflection", proposal.id, {"evidence_refs": evidence_refs, "proposal_id": proposal.id}
+        )
+        return proposal
 
     def status(self):
         return {

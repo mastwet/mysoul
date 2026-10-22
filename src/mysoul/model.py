@@ -34,6 +34,11 @@ class ReplayModel:
     ) -> StepDecision:
         self.calls += 1
         self.payloads.append(context.payload())
+        if "[reflection]" in context.instructions:
+            return StepDecision(
+                done=True,
+                note="# Work\nProcedure: verify\nRead artifacts before completing work.\n",
+            )
         return (
             self.steps.popleft() if self.steps else StepDecision(done=True, note="Replay complete")
         )

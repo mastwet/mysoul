@@ -159,6 +159,7 @@ class ContextBundle(Contract):
     task: str = ""
     recap: str = ""
     evidence: list[Evidence] = Field(default_factory=list)
+    step_results: list[Evidence] = Field(default_factory=list)
     skill: str = ""
     recall_status: str = "available"
 

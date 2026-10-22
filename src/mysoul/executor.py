@@ -191,7 +191,7 @@ class Executor:
                     )
                     self.store.add_evidence(evidence)
                     latest.context_refs.append(evidence.id)
-                    context.evidence.append(evidence)
+                    context.step_results.append(evidence)
                     if len(context.payload()) > 16000:
                         self.store.save_activity(latest)
                         return self._finish(latest, "suspended")

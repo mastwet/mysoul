@@ -38,3 +38,8 @@ All results are local development evidence, not live deployment claims.
 - Actual Windows symlink escape, alternate paths, hardlinks, oversized I/O and a real write/read/feedback task verified.
 - Windows parent directory handles deny replacement during I/O; file contents are accessed only after handle-path verification.
 - Arbitrary execution is unconditionally disabled; actual-isolation tests report skipped, never approved.
+
+## T08
+- RED: evolution modules absent; reflection service absent. GREEN: 9 tests passed for evidence, isolated candidates, objective failure, hash-bound approval, pinned versions, activation, rollback and budgeted reflection.
+- Regression found and fixed: historical recall was being counted as current-task tool progress. A distinct step_results field now carries only this task's results.
+- Candidate evaluation uses a deterministic draft/verify fixture; no claim of real-model skill improvement.
