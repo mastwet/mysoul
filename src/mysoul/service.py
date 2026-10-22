@@ -326,7 +326,7 @@ class SoulService:
                         "SELECT 1 FROM evidence WHERE id=?", (reply.id,)
                     ).fetchone()
                 if not present:
-                    self.store.record_interaction(event, result, reply, enqueue=False)
+                    self.store.record_interaction(event, result, reply, enqueue=False, capture=False)
 
     async def _draft(self, request):
         text = request.arguments.get("text", "")

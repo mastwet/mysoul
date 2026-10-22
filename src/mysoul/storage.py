@@ -133,7 +133,7 @@ class StateStore:
             ).fetchone()
             return json.loads(row[0]) if row else None
 
-    def record_interaction(self, event, result, reply=None, *, enqueue=True):
+    def record_interaction(self, event, result, reply=None, *, enqueue=True, capture=True):
         with self.transaction() as db:
             db.execute(
                 "INSERT INTO objects VALUES('interaction',?,?) "
@@ -151,6 +151,10 @@ class StateStore:
                         "INSERT OR IGNORE INTO objects VALUES('recap_segment',?,?)",
                         (reply.id, json.dumps({"id": reply.id, "status": "pending"})),
                     )
+            if capture:
+                from mysoul.cognition import CognitiveStore
+
+                CognitiveStore.capture_interaction_in(db, event.id)
             db.execute("UPDATE inbox SET status='processed' WHERE dedup=?", (event.dedup_key,))
 
     def put(self, kind: str, ident: str, value):
