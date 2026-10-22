@@ -101,6 +101,9 @@ class SoulService:
         self.phone_cursor = (self.store.get("cursor", "phone") or {}).get("value")
         self.memory_process = None
         self.owner_turns = 0
+        from mysoul.autonomy import ActivityRouter
+
+        self.activities = ActivityRouter(self)
 
     async def __aenter__(self):
         try:
@@ -154,7 +157,7 @@ class SoulService:
             return
         events = self.scheduler.drain()
         if not events:
-            await self.life.choose([])
+            await self.activities.idle()
             return
         groups = {}
         for event in events:
@@ -190,7 +193,10 @@ class SoulService:
                     if event is group[-1]
                     else decision.model_copy(update={"chat_action": "silent", "reply": ""})
                 )
-                await self._ingest(event, decision=selected, admission_epoch=epoch)
+                await self._ingest(
+                    event, decision=selected, admission_epoch=epoch, execute_activity=False
+                )
+            await self.activities.perform(decision, epoch, event=group[-1])
         except ContextOverflow:
             # Retain full evidence and consume the bad batch so other scopes can progress.
             for event in group:
@@ -335,7 +341,9 @@ class SoulService:
                 result.update(choice="unknown", text="Reply outcome is uncertain; no resend")
         return result
 
-    async def _ingest(self, event: Event, decision=None, admission_epoch=None):
+    async def _ingest(
+        self, event: Event, decision=None, admission_epoch=None, execute_activity=True
+    ):
         if not self.store.add_event(event):
             canonical = self.store.event_for_dedup(event.dedup_key)
             if not canonical or self.store.get("interaction", canonical.id):
@@ -427,25 +435,36 @@ class SoulService:
                 event.id,
                 {"text": text, "scope": event.scope.model_dump(), "status": "draft"},
             )
-        return self._record_interaction(event, result)
+        result = self._record_interaction(event, result)
+        if execute_activity:
+            await self.activities.perform(decision, admission_epoch, event=event)
+        return result
 
-    async def start_goal(self, goal: Goal):
-        epoch = self.store.load_subject().dispatch_epoch
+    async def start_goal(self, goal: Goal, *, expected_epoch=None):
+        epoch = (
+            self.store.load_subject().dispatch_epoch if expected_epoch is None else expected_epoch
+        )
         version = self.skills.active()
         context = await self.context(
             Scope(), goal.objective + "\nCompletion: " + goal.completion_criteria
         )
         goal.skill_version = version.content_hash
         context.skill = version.text
-        return await self.executor.start(goal, context, expected_epoch=epoch)
+        try:
+            return await self.executor.start(goal, context, expected_epoch=epoch)
+        finally:
+            self.activities.capture_feedback()
 
-    async def reflect(self, evidence_refs: list[str]):
+    async def reflect(self, evidence_refs: list[str], *, expected_epoch=None):
         from mysoul.storage import Conflict
 
         if self.executor.running:
             raise Conflict("Interrupt foreground work before reflection")
         if not evidence_refs:
             raise ValueError("Reflection requires evidence")
+        epoch = (
+            self.store.load_subject().dispatch_epoch if expected_epoch is None else expected_epoch
+        )
         evidence = [self.store.evidence(ref) for ref in evidence_refs]
         context = await self.context(Scope(), "Propose one revised work skill as Markdown in note.")
         context.instructions += (
@@ -457,6 +476,8 @@ class SoulService:
         limits = ModelLimits(retries=0)
         reserve, attempts = reservation(self.model, context, limits, [])
         state = self.store.load_subject()
+        if state.dispatch_epoch != epoch:
+            raise Conflict("Reflection superseded during context preparation")
         if (
             state.model_calls + attempts > self.settings.model_call_limit
             or state.tokens_used + reserve > self.settings.token_budget

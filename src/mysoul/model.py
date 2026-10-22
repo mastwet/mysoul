@@ -36,6 +36,14 @@ class ReplayModel:
         self.payloads.append(context.payload())
         if self.decisions:
             return self.decisions.popleft()
+        if context.task.startswith("[ready activities]\n"):
+            import json
+
+            ready = json.loads(context.task.split("\n", 1)[1])
+            if ready["feedback"]:
+                return ActivityDecision(activity=Activity.REFLECT)
+            if ready["goals"]:
+                return ActivityDecision(activity=Activity.WORK, goal_id=ready["goals"][0]["id"])
         activity = Activity.CHAT if context.task else Activity.REST
         return ActivityDecision(
             activity=activity,

@@ -50,6 +50,7 @@ class EffectDispatcher:
                     and goal
                     and goal.status == "active"
                     and not goal.cancelled
+                    and (goal.allowed_tools is None or request.tool in goal.allowed_tools)
                     and request.deadline > self.clock()
                     and request.tool in self.handlers
                     and request.scope.audience in self.audiences.get(request.tool, set())

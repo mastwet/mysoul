@@ -67,6 +67,7 @@ class ActivityDecision(Contract):
     activity: Activity
     rationale: str = Field(default="", max_length=1000)
     goal_id: str | None = None
+    continuation: Literal["continue", "replan", "abandon"] | None = None
     rest_until: AwareDatetime | None = None
     chat_action: Literal["read", "silent", "reply"] = "silent"
     reply: str = Field(default="", max_length=4000)
@@ -89,6 +90,7 @@ class Goal(Contract):
     elapsed_seconds: float = Field(default=0, ge=0)
     status: GoalStatus = "pending"
     cancelled: bool = False
+    allowed_tools: set[str] | None = None
     skill_version: str = "initial"
     created_at: AwareDatetime = Field(default_factory=now)
 

@@ -74,12 +74,14 @@ class Executor:
         current = refresh_recap_context(self.store, context.model_copy(deep=True))
         if current.payload() != context.payload():
             raise Conflict("Recap changed during model admission; resume with refreshed context")
+        goal = self.store.goal(self.store.activity(state["activity_id"]).goal_id)
+        specs = self.dispatcher.tool_specs(context.scope.audience)
+        if goal.allowed_tools is not None:
+            specs = [spec for spec in specs if spec["name"] in goal.allowed_tools]
         decision = await asyncio.wait_for(
             self.model.execute_step(
                 context,
-                self.dispatcher.tool_specs(
-                    ContextBundle.model_validate(state["context"]).scope.audience
-                ),
+                specs,
                 limits,
             ),
             limits.timeout,
