@@ -56,7 +56,7 @@ automatic activation record or pinned persona projection for future task boundar
 Recommended: adapt the reference lifecycle and authority boundaries into the
 existing mysoul service. Reuse its one Recap, evidence IDs, transaction layer,
 epoch admission, memory outbox and operator UI. Add a durable cognitive-run
-record and persona-review records; do not introduce a competing memory engine.
+record and automatic persona-change records; do not introduce a competing memory engine.
 
 Copying the Go runtime would duplicate scheduling/storage and conflict with
 D002. Adding only prompts to the present reflection function would be smaller,
@@ -93,6 +93,10 @@ persona activation. Neither is selected.
 The host background loop checks eligibility without a model call. Use a separate
 persisted maintenance policy, initially a three-minute minimum interval with at
 most one bounded source window per run; this does not replace the chat heartbeat.
+Trial defaults are a 16000-character source window and eight retained complete
+recent turns, within the existing total context budget. Failure retries back off
+through 3, 6, 12, 24 and up to 60 minutes. These are configurable experiment
+settings, not inherited Vivy constants or established quality thresholds.
 No new evidence means no inference. New evidence, owner-selected retry or a due
 persisted backoff can admit work. Failures are visible and back off; unchanged
 readiness must not suppress all future maintenance. Owner input takes precedence.
@@ -108,8 +112,8 @@ must not delay a due main-chat initiative.
 - USER observations have a distinct structured projection; preserve owner-written
   USER material byte-for-byte when applying an observations proposal. Do not copy
   the reference's ambiguous whole-USER actor mapping as an implementation shortcut.
-- WORLD changes are automatically applicable, evidence-backed knowledge updates. WORLD remains available on
-  explicit inspection and is excluded from automatic persona model injection.
+- WORLD changes are automatically applicable, evidence-backed knowledge updates.
+  WORLD remains available on explicit inspection and is excluded from automatic persona model injection.
 - Redline, Dream, Mission and the public group projection are owner-controlled;
   the automatic chain has no candidate type that can rewrite them.
 - Each change stores target, old/new text, reason, source IDs, source window,
@@ -135,7 +139,8 @@ keep orchestration in a focused cognitive-service module if adding it to the
 existing files would mix unrelated responsibilities. Preserve skill APIs.
 
 Memory UI shows current Recap, revision, covered/pending sources, recent run
-stages, last result/error, retry and a manual run action. Persona UI adds an automatic-evolution toggle and change history with evidence,
+stages, last result/error, retry and a manual run action. Persona UI adds an
+automatic-evolution toggle and change history with evidence,
 old/new text, applied/rejected/conflict outcomes and rollback. There is no mandatory
 approval queue in the default automatic mode.
 Do not show a 'completed' label for a failed publish, rejected change or outbox
