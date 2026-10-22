@@ -30,8 +30,37 @@ CDN/runtime package download. CSP, bearer, Origin and CSRF protection are retain
   fatigue status detail, grouped settings, theme selection, subject-state save,
   mobile navigation/modal focus return, budget readings, Shift+Enter newline,
   Enter submission, pending state and exactly one final visible message.
-- Screenshots: `assets/chat-ui-desktop.png`, `assets/chat-ui-mobile.png`.
+- Screenshots: `assets/chat-ui-desktop.png`, `assets/chat-ui-mobile.png`,
+  `assets/chat-ui-conversation.png`, `assets/chat-ui-settings-dark.png`.
 - No live model, MemPalace or QQ call was made for this UI revision.
+
+## Review follow-up
+
+A fresh independent reviewer found one Important issue: disabling the composer
+during submission moved native browser focus to the page body. The response now
+returns focus to the composer only while still in chat, with no dialog open and
+no deliberate focus move to another control. Two DOM regression cases failed
+before the fix and passed afterward; the navigation case passed throughout.
+The DOM harness explicitly reproduces Chromium's disabled-textarea blur transition,
+which jsdom does not implement consistently. The final native browser revalidation
+confirmed the focused element was the message textarea after completion. Switching
+settings categories and background polling preserved an unsaved fatigue value; its
+explicit save updated the card. No browser console errors were reported. There were
+no deferred minor findings. Final checks: 130 Python tests passed / 8 skipped, seven
+Node tests passed, Ruff/JS syntax/wheel build passed. The wheel includes all six UI
+resources, including the local parser and license.
+
+The dev-only DOM suite uses a separately locked jsdom dependency, never needed by
+the production UI. Run all seven Node tests with:
+
+```powershell
+npm ci --prefix tests/ui --ignore-scripts --no-audit --no-fund
+npm test --prefix tests/ui
+```
+
+Review boundaries remain the existing ones: live integrations, multi-conversation
+storage, streaming and non-loopback deployment are outside this UI revision. The
+UI continues to identify replay mode and actual effect/approval states honestly.
 
 ## Third-party notice
 

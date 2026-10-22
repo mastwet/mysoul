@@ -13,6 +13,12 @@ Open the loopback URL printed by the command. Its fragment contains the local op
 
 The default uses deterministic offline responses and fixture memory. It is useful for exercising state and review workflows; it does not perform general AI work. For a deterministic file-task demonstration, set `MYSOUL_MODEL_MODE=procedure-replay`. That fixture writes `report.txt`, and reads it back when the active skill contains `Procedure: verify`.
 
+The UI opens in the conversation view. The top-right fatigue card opens current
+activity and budget details. The sidebar holds tasks, memory, skill review and grouped
+settings. Appearance and Enter-send preferences save in this browser; subject state
+and public-persona edits require their explicit save actions. Enter sends by default;
+Shift+Enter inserts a newline. Settings can switch sending to Ctrl/Command+Enter.
+
 ```powershell
 uv run python -m mysoul replay --trace tests/fixtures/life_trace.jsonl --data-dir .local/replay-demo
 uv run ruff check .

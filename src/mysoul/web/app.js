@@ -86,6 +86,10 @@ async function busy(element, action) {
     busyScopes.delete(scope);scope.removeAttribute("aria-busy");
     controls.forEach((control,i)=>control.disabled=disabled[i]);
     renderSnapshot(true);if(skillData)renderSkills(skillData,true);updateComposer();
+    if(scope===$("chat-form")&&activeView==="chat"&&document.activeElement===document.body
+        &&!$("settings-dialog").open&&!$("status-dialog").open){
+      $("chat-text").focus({preventScroll:true});
+    }
   }
 }
 function bindForm(id, action) {$(id).addEventListener("submit",event=>{event.preventDefault();busy($(id),action);});}

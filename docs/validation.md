@@ -1,10 +1,19 @@
 # Validation ledger
 
-Current result after autonomous closure review and fixes (2026-10-22): **129 passed, 8 skipped**.
+Current result after UI redesign and fixes (2026-10-22): **130 passed, 8 skipped**, plus **7 Node UI tests**.
 Ruff and JavaScript syntax checks pass. This is a Windows offline milestone;
 real integrations remain pending. See [review disposition](review.md) and [runbook](runbook.md).
 
 All results are local development evidence, not live deployment claims.
+
+## Conversation UI redesign
+
+The chat-first layout, top-right fatigue card, grouped settings, light/dark themes,
+responsive navigation and retained application actions were exercised in the actual
+loopback browser at desktop and 390×844. The independent reviewer found a composer
+focus issue; two failing DOM regressions reproduced it before the fix. Success/error
+focus recovery and navigation-without-focus-theft now pass. See `ui-redesign.md`
+for commands, screenshot references, third-party notice and review boundaries.
 
 ## Autonomous closure follow-up
 
