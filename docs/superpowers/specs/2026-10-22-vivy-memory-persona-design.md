@@ -1,7 +1,8 @@
 # Vivy-aligned memory consolidation and persona evolution
 
-Status: scope reviewed with owner correction: persona changes should activate automatically.
-Implementation plan review pending; no product behavior has changed.
+Status: implemented, independently reviewed and activated on 2026-10-23.
+Offline/browser acceptance and a live no-change cycle passed; real positive persona
+activation and external integration gates remain unverified (see docs/validation.md).
 Date: 2026-10-22 (Asia/Shanghai).
 Baseline: mysoul cfdb5b2; local agent-vivy 7b42b292; local laputa 4b2bec2.
 
@@ -19,7 +20,7 @@ remain available.
 This extends D006/D010, which currently forbid model-proposed persona evolution.
 A superseding decision will authorize validated automatic changes through the
 persona authority, with explicit protected fields and rollback. Skill evolution remains a separate existing
-reviewed chain. This draft does not change the accepted decisions yet.
+reviewed chain. D013 records this narrow superseding decision.
 
 ## Reference findings: implementation versus target policy
 
@@ -114,6 +115,8 @@ must not delay a due main-chat initiative.
   the reference's ambiguous whole-USER actor mapping as an implementation shortcut.
 - WORLD changes are automatically applicable, evidence-backed knowledge updates.
   WORLD remains available on explicit inspection and is excluded from automatic persona model injection.
+  Automatic changes append evidence-backed additions to the unseen base under CAS;
+  only explicit owner editing can replace that field.
 - Redline, Dream, Mission and the public group projection are owner-controlled;
   the automatic chain has no candidate type that can rewrite them.
 - Each change stores target, old/new text, reason, source IDs, source window,
@@ -178,4 +181,5 @@ bounded; do not reprocess the whole chat archive automatically on first startup.
 
 The owner requested automatic activation instead of per-change review. The
 implementation plan preserves the previously requested sequential execution in
-this chat. No implementation or runtime migration has started.
+this chat. Source capture, automatic consolidation, persona activation and UI are implemented;
+see the plan and validation record for final runtime verification.

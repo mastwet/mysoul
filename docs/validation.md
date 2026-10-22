@@ -243,3 +243,72 @@ for commands, screenshot references, third-party notice and review boundaries.
   current worktree, data directory, port and testing flags can be reused.
   Screenshot is in that local folder as `local-test-unlimited.png`. This change
   does not count skipped QQ, MemPalace or isolation gates as passes.
+
+## Vivy-aligned memory and automatic persona chain (2026-10-23)
+
+- Complete owner/assistant/failure sources now feed bounded, offset-aware windows.
+  Six durable stages cover collect, prepare, reconcile, reflect, effects and finish.
+  Recap and source coverage publish atomically. Later-stage retry does not refold a
+  committed Recap; no new evidence makes no model call. A separate three-minute
+  maintenance policy runs through the existing single-subject admission gate.
+- Persona changes automatically activate with base/epoch/evidence checks, history,
+  old/new text and rollback. Identity, relationship, dark, WORLD additions and separate
+  inferred observations are eligible. Redline/Mission/Dream/public/owner USER remain
+  manual. WORLD is never injected automatically, and additions preserve its unseen
+  base. Inference labels do not guarantee semantic truth or perfect fiction detection.
+- Independent review found three Important issues: incomplete turns after migration,
+  missing task tool/final result content, and destructive replacement of unseen WORLD.
+  Each regression failed before its fix and passed afterward. Final full suite:
+  **231 Python passed, 8 explicit skips; 26 UI passed**. Ruff, JavaScript syntax,
+  whitespace checks and offline source/wheel build passed. No deferred minor findings.
+- Disposable real-provider check used the saved gemini-3.8-flash-high gateway with
+  separate data at `.local/cognition-real-check-20261023`. Recap publication passed
+  (version 1, 349 characters), but reflection timed out at 120 seconds twice and at
+  240 seconds on one isolated retry. All retries retained Recap version 1 and the same
+  failed stage. No persona change activated in this scenario. The actual saved timeout
+  was not modified. Real positive-change activation is **not certified** by this run;
+  deterministic automatic activation, version pinning and rollback are verified.
+- Stopped the existing 8767 service and backed up all 17 runtime files to
+  `.local/backups/ui-redesign-before-cognition-20261023-001950` before activation.
+  Restarted the same `.local/ui-redesign` directory with `--local-test`. Session is
+  tokenless; cumulative call/token limits are null; initiative remains enabled at
+  three minutes. Existing provider credentials and data were retained.
+- The actual service automatically started a run at **00:19:52 Asia/Shanghai** and
+  completed by **00:20:17** using the real provider. Run
+  `7ad051175023445a9a2d006d4b6a7788` has all six receipts, no error, outcome `no_change`,
+  three covered sources, zero pending sources, Recap **v9 -> v10**, persona still **v1**.
+  The model explicitly found only task state changes and no supported persona change.
+  This verifies the real complete no-change path; it does not substitute for the
+  failed positive-change scenario. The next natural chat check started at 00:20:42.
+- Browser fixture 8768 verified complete source details, empty manual run, pause/resume,
+  old/new change text and rollback v1 -> v2, including a 390x844 layout. Actual 8767
+  browser verified the completed source coverage/receipts, automatic persona enabled,
+  and no console errors. Actual owner persona was not rolled back as a test. Fixture
+  server/tab were closed; actual service/tab remain available. Screenshot:
+  `C:/Users/Administrator/Desktop/mysoul/.local/cognition-live-completed.png`.
+- Migration deliberately retains 18 already-published legacy excerpts as legacy,
+  without claiming complete historical coverage or replaying the entire archive.
+  Old task final notes were not historically stored and cannot be reconstructed.
+  New startup recovery runs on each boot; new task notes are durable.
+
+### Review rulings and remaining acceptance boundaries
+
+1. Maintenance failures are durable retry receipts rather than scheduler exceptions;
+   fresh goals/skill feedback receive first admission. Continuous new work may delay
+   maintenance. This preserves the agreed owner/work priority.
+2. Runtime activation/recovery and rendered browser acceptance were checked by the
+   executor, separately from code review. A preserved backup remains the recovery
+   route for an undiscovered migration problem; untested layouts may need refinement.
+3. Citation validation proves allowed provenance, not truth of inferred observations;
+   owner correction and version rollback remain necessary for bad inferences.
+4. MemPalace/QQ/isolation gates remain separate. Local completion means local authority
+   publication and note enqueue; it does not certify external delivery. MemPalace is
+   not connected here and its pending queue remains visible. No real QQ send occurred.
+5. Large archive performance/retention have no certified scale target. Source/history
+   enumeration can become slow as data grows; no scale benchmark is claimed.
+6. The isolation contract is one main owner scope. Generalized independent owner
+   sessions would require additional isolation work before that use is supported.
+
+Delivery remains **offline loop complete / real integrations pending acceptance**.
+A real provider no-change cycle passed, while the disposable positive-change reflection
+failed. Skipped or failed external checks are not counted as passing full v0.1.

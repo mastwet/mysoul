@@ -158,7 +158,9 @@ relationship, dark, world and separate model-inferred USER observations can publ
 through the versioned authority with window-bound evidence, epoch/base checks and
 idempotent receipts. Redline, Mission, Dream, public projection and owner-authored USER
 remain manual. WORLD is available through explicit inspection and omitted from automatic
-model projection, including reflection. Automatic changes are provenance-checked, not
+model projection, including reflection. Automatic WORLD updates add to the unseen base
+under CAS; whole-field replacement remains an explicit owner edit. Automatic changes
+are provenance-checked, not
 proof of factual truth. Rollback publishes a new version; active tasks keep their snapshot.
 Private notes use the memory outbox but do not recursively become consolidation sources.
 

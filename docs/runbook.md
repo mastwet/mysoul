@@ -179,3 +179,63 @@ failures recur.
 - [LangGraph checkpoint SQLite](https://github.com/langchain-ai/langgraph/tree/main/libs/checkpoint-sqlite) supplies graph persistence, not exactly-once remote effects.
 - [MemPalace](https://github.com/MemPalace/mempalace) supplies the full memory engine. It is MIT licensed; preserve its notices and review dependency notices when packaging it. Its source and large dependencies are not vendored into mysoul.
 - [NapCat OneBot API](https://napneko.github.io/onebot/api) and [OneBot 11](https://github.com/botuniverse/onebot-11/blob/master/api/public.md) define the adapter's provider-specific calls.
+
+## Memory organization and automatic persona evolution
+
+Memory → Automatic organization shows source coverage, durable stages and failures.
+The default policy checks every three minutes, admits at most 16000 source characters,
+and keeps eight complete recent turns in owner context. New owner dialogue takes
+precedence. A previous plain REST choice cannot permanently suppress due maintenance.
+No pending source means no model call. The main-chat heartbeat has its own schedule.
+
+“整理 / 重试” queues the same service used by the loop; the returned run ID persists.
+It can explicitly run with automatic maintenance paused, while subject admission,
+mode/rest/fatigue, epoch and configured budgets remain authoritative. If the subject
+is busy, the queued request waits. Failure retries back off 3/6/12/24/48/60 minutes,
+capped at 60; the failed stage and error remain visible. A successful Recap commit
+is not repeated when only persona reflection needs retry. No-change is a valid result.
+
+Persona → Automatic evolution enables or pauses evidence-bound updates. Supported
+fields are identity, relationship, dark, world and model-inferred user observations.
+Redline, Mission, Dream, public group projection and the owner's USER section remain
+manual. Observations are a separate editable field and are not confirmed biography.
+Inspect old/new text and cited source content before deciding whether to correct it.
+WORLD remains visible for inspection but is excluded from automatic model projection.
+Automatic WORLD text is appended to its existing content under the same version check;
+only an explicit owner edit replaces the whole field. An over-capacity merged field
+is rejected without deleting the existing knowledge.
+History “恢复到 vN” publishes a new revision; it does not delete history. New turns use
+the new version, while resumed tasks retain their admitted persona/skill projection.
+
+Recap clear marks existing cognitive sources cleared without erasing their raw evidence.
+A model response based on the former Recap or owner epoch cannot republish stale state.
+Failed publication leaves source coverage unchanged. Long sources carry exact offsets;
+only the admitted prefix is covered, and the remaining suffix stays pending. If the
+required raw context plus recent turns cannot fit, the request reports context overflow
+rather than silently discarding it. Reduce the maintenance window or increase the
+configured context capacity when appropriate. `window_chars` and `tail_turns` are
+versioned policy fields available through POST `/api/cognition/policy`.
+
+Migration is additive and runs under the subject lease. Existing pending legacy inputs
+are imported; already-published excerpts are labeled legacy coverage and are not replayed
+as whole history. Every startup also recovers still-pending unfinished owner turns, even after the
+one-time migration marker exists, with an explicit failure label and no invented reply.
+Task sources include confirmed tool content and the durable final model note; large
+results have separate provenance-bearing slices. Old tasks predate the final-note field
+and cannot retroactively supply a note that was never stored. Current
+model-generated reflection notes use stable IDs and the memory outbox, but are not fed
+back as new experience. MemPalace delivery status remains separate from local publication.
+
+Before updating the running service, stop it and copy the **entire** data directory.
+Keep the backup and run only one process for a subject. Start the existing test instance:
+
+```powershell
+.\.venv\Scripts\python.exe -m mysoul serve --port 8767 --data-dir .local/ui-redesign --local-test
+```
+
+The startup flag preserves tokenless local testing and the unlimited cumulative call
+budget; saved provider limits remain separate. Host/Origin/CSRF checks stay active.
+To recover a bad automatic persona change, prefer a history rollback. For storage
+recovery, restore the stopped full-directory backup into a different directory and
+inspect versions and pending runs before switching daily use to it. Do not delete or
+hand-edit coverage, operation receipts, or unknown external-effect records.
