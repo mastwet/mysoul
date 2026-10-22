@@ -563,6 +563,10 @@ class SoulService:
                 "isolation": "disabled",
             },
             "backend": self.settings.backend,
+            "limits": {
+                "model_calls": self.settings.model_call_limit,
+                "tokens": self.settings.token_budget,
+            },
             "send_enabled": self.settings.send_enabled,
             "persona": self.store.get("config", "persona") or {"public": "A helpful companion."},
             "reflections": self.store.all("reflection"),

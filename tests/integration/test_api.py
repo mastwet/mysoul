@@ -88,3 +88,10 @@ def test_persona_and_mode_are_persisted(client):
     body = client.get("/api/status").json()
     assert body["state"]["mode"] == "quiet" and body["state"]["fatigue"] == 0.5
     assert body["persona"]["public"] == "A careful companion."
+
+
+def test_operator_status_exposes_budget_limits_without_credentials(client):
+    body = client.get("/api/status").json()
+    assert body["limits"] == {"model_calls": 100, "tokens": 50000}
+    assert "operator_token" not in body
+    assert "api_key" not in body

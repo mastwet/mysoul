@@ -160,6 +160,18 @@ def create_app(settings: Settings | None = None, *, token=None, service=None):
     async def stylesheet():
         return FileResponse(Path(__file__).parent / "web/style.css", media_type="text/css")
 
+    @app.get("/conversation.mjs")
+    async def conversation_module():
+        return FileResponse(
+            Path(__file__).parent / "web/conversation.mjs", media_type="text/javascript"
+        )
+
+    @app.get("/vendor/markdown-it.min.js")
+    async def markdown_vendor():
+        return FileResponse(
+            Path(__file__).parent / "web/vendor/markdown-it.min.js", media_type="text/javascript"
+        )
+
     @app.get("/health")
     async def health():
         return {"status": "ok"}
