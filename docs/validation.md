@@ -12,3 +12,8 @@ All results are local development evidence, not live deployment claims.
 ## T02
 - RED: life module absent. GREEN: 7 tests passed, including 1,000 quiet rest ticks and a bounded 1,000-event burst.
 - Fatigue calibration is configurable; paired deterministic traces will be recorded in T10.
+
+## T03
+- RED: effects/executor modules absent. GREEN: 7 executor/checkpoint tests passed.
+- Tested actual AsyncSqliteSaver persistence (langgraph 1.2.16, checkpoint-sqlite 3.1.2).
+- Unknown effects are retained; cancellation and owner interruption do not erase remote receipts.
