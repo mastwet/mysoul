@@ -90,7 +90,7 @@
 
   <dialog id="status-dialog" class="status-dialog" aria-labelledby="status-title">
     <div class="dialog-header"><h2 id="status-title">当前状态</h2><button class="icon-button" type="button" data-close="status-dialog" aria-label="关闭状态"></button></div>
-    <div class="dialog-body"><div class="status-overview"><span id="status-activity">休息</span><strong id="status-fatigue">0%</strong></div><p id="fatigue-description" class="muted">精力充足</p><dl class="stat-list"><div><dt>运行模式</dt><dd id="mode-label">日常</dd></div><div><dt>模型调用</dt><dd id="calls">0</dd></div><div><dt>已预留 token</dt><dd id="tokens">0</dd></div></dl><button id="status-settings" class="secondary full" type="button">调整运行状态</button></div>
+    <div class="dialog-body"><div class="status-overview"><span id="status-activity">休息</span><strong id="status-fatigue">0%</strong></div><p id="fatigue-description" class="muted">精力充足</p><dl class="stat-list"><div><dt>运行模式</dt><dd id="mode-label">日常</dd></div><div><dt>模型调用</dt><dd id="calls">0</dd></div><div><dt>累计 token 估算</dt><dd id="tokens">0</dd></div></dl><button id="status-settings" class="secondary full" type="button">调整运行状态</button></div>
   </dialog>
 
   <dialog id="settings-dialog" class="settings-dialog" aria-labelledby="settings-title">
@@ -110,15 +110,19 @@
               <label for="model-name">模型名称</label><input id="model-name" type="text" placeholder="填写服务商提供的模型 ID" maxlength="200" spellcheck="false" autocomplete="off">
               <label for="model-key">API Key（模型密钥）</label><input id="model-key" type="password" placeholder="填写模型服务的 API Key" maxlength="8192" autocomplete="new-password" spellcheck="false">
               <p id="model-key-note" class="field-note">与本机操作令牌不同。密钥保存在本机，不会回显。</p>
+              <label for="model-output-limit">单次输出 token 上限</label><input id="model-output-limit" type="number" min="1" step="1" placeholder="不限（留空，由模型服务决定）">
+              <p class="field-note">留空时不发送 max_tokens。模型服务自身的输出限制仍然适用。</p>
               <p class="field-note">测试会向此地址发送一次最小请求并计入预算，不携带聊天或记忆。启用后，正常推理会把对应上下文发送给该服务。</p>
             </div>
+            <label for="model-token-budget">系统累计 token 预算</label><input id="model-token-budget" type="number" min="0" step="1" placeholder="不限（留空）">
+            <p class="field-note">留空即不按 token 总量停止调用。调用次数、任务步数和超时限制继续生效。已有任务保留原预算；候选技能测试有独立预算。</p>
             <p id="model-feedback" class="field-note" role="status"></p>
             <div class="form-actions"><button id="reset-model" class="secondary" type="button" hidden>撤销修改</button><button id="test-model" class="secondary" type="button" hidden>测试连接</button><button class="primary" type="submit">保存并启用</button></div>
           </form>
         </section>
         <section id="setting-life" class="setting-page" hidden><h3>主体状态</h3><form id="life-form"><label for="mode">运行模式</label><select id="mode"><option value="normal">日常 · 自然安排活动</option><option value="quiet">安静 · 减少主动唤醒</option><option value="focused">专注 · 优先有限工作</option></select><p class="field-note">模式影响活动偏好，权限和预算限制始终生效。</p><label for="fatigue-input">校准疲劳值</label><div class="fatigue-input-row"><input id="fatigue-range" aria-label="疲劳滑块" type="range" min="0" max="100" step="1" value="0"><div class="percent-input"><input id="fatigue-input" type="number" min="0" max="100" step="1" value="0" required><span>%</span></div></div><p class="field-note">疲劳会随活动累积、随休息恢复。手动校准立即改变当前状态。</p><div class="form-actions"><span id="life-saved" class="save-feedback" role="status"></span><button class="primary" type="submit">保存状态</button></div></form></section>
         <section id="setting-persona" class="setting-page" hidden><h3>公开人格</h3><p class="muted">会用于公开场景的人格描述，避免填写私密内容。</p><p id="persona-view" class="prose"></p><button id="edit-persona" class="secondary" type="button">编辑公开人格</button><form id="persona-form" hidden><label class="sr-only" for="persona-text">公开人格配置</label><textarea id="persona-text" maxlength="2000" rows="7" required></textarea><div class="form-actions"><button id="cancel-persona" class="secondary" type="button">取消</button><button class="primary" type="submit">保存配置</button></div></form></section>
-        <section id="setting-connections" class="setting-page" hidden><h3>接入与预算</h3><p id="connection-description" class="muted"></p><ul id="gates" class="connection-list"></ul><div class="budget-block"><h4>当前预算使用</h4><div class="budget-row"><span>模型调用</span><strong id="budget-calls"></strong></div><progress id="calls-meter" aria-label="模型调用预算" value="0" max="100"></progress><div class="budget-row"><span>已预留 token</span><strong id="budget-tokens"></strong></div><progress id="tokens-meter" aria-label="Token 预算" value="0" max="50000"></progress><p class="field-note">计数持久保存。预留 token 是调用前的保守预算，并非实际账单。</p></div></section>
+        <section id="setting-connections" class="setting-page" hidden><h3>接入与预算</h3><p id="connection-description" class="muted"></p><ul id="gates" class="connection-list"></ul><div class="budget-block"><h4>当前预算使用</h4><div class="budget-row"><span>模型调用</span><strong id="budget-calls"></strong></div><progress id="calls-meter" aria-label="模型调用预算" value="0" max="100"></progress><div class="budget-row"><span>累计 token 估算</span><strong id="budget-tokens"></strong></div><progress id="tokens-meter" aria-label="Token 预算" value="0" max="50000"></progress><p class="field-note">计数持久保存，不是实际账单。不限输出时仅累计输入与协议开销估算，无法作为费用上限。</p></div></section>
       </div>
     </div>
     <div id="settings-feedback" class="dialog-feedback" role="status" hidden></div>

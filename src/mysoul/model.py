@@ -12,12 +12,20 @@ class ModelAdapter(Protocol):
     ) -> StepDecision: ...
 
 
+def budget_exceeded(used, reserved, limit):
+    return limit is not None and used + reserved > limit
+
+
+def budget_reached(used, limit):
+    return limit is not None and used >= limit
+
+
 def reservation(model, context, limits, tool_specs=None):
     estimate = getattr(model, "reservation", None)
     tokens = (
         estimate(context, limits, tool_specs)
         if estimate
-        else limits.max_tokens * (limits.retries + 1)
+        else (limits.max_tokens or 1024) * (limits.retries + 1)
     )
     return tokens, limits.retries + 1
 

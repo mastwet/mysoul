@@ -24,7 +24,7 @@ from mysoul.domain import (
 )
 from mysoul.laputa import ContextOverflow, refresh_recap_context
 from mysoul.life import advance_fatigue
-from mysoul.model import reservation
+from mysoul.model import budget_exceeded, budget_reached, reservation
 from mysoul.storage import Conflict
 
 
@@ -150,7 +150,7 @@ class Executor:
                 if (
                     activity.cursor >= goal.step_limit
                     or goal.elapsed_seconds >= goal.time_limit
-                    or goal.tokens_used >= goal.token_limit
+                    or budget_reached(goal.tokens_used, goal.token_limit)
                 ):
                     return self._finish(activity, "failed")
                 config = {"configurable": {"thread_id": activity.id}}
@@ -160,8 +160,13 @@ class Executor:
                     latest = self.store.activity(activity.id)
                     if latest.status != "active" or latest.dispatch_epoch != state.dispatch_epoch:
                         return latest
+                    output_limit = self.settings.model_output_limit
+                    if goal.token_limit is not None:
+                        output_limit = min(
+                            1024, output_limit or 1024, goal.token_limit - goal.tokens_used
+                        )
                     limits = ModelLimits(
-                        max_tokens=min(1024, goal.token_limit - goal.tokens_used),
+                        max_tokens=output_limit,
                         timeout=min(30, goal.time_limit - goal.elapsed_seconds),
                     )
                     context = ContextBundle.model_validate(
@@ -179,8 +184,8 @@ class Executor:
                     )
                     if (
                         state.model_calls + attempts > self.settings.model_call_limit
-                        or state.tokens_used + reserve > self.settings.token_budget
-                        or goal.tokens_used + reserve > goal.token_limit
+                        or budget_exceeded(state.tokens_used, reserve, self.settings.token_budget)
+                        or budget_exceeded(goal.tokens_used, reserve, goal.token_limit)
                     ):
                         return self._finish(activity, "suspended")
                     state.model_calls += attempts

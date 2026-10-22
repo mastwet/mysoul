@@ -18,7 +18,7 @@ provider's base API URL (normally ending in `/v1`), raw model ID and API key.
 The **本机操作令牌** authenticates this UI; it is unrelated to the provider API key.
 The header reports the active model independently of the QQ transport backend.
 
-**测试连接** sends one minimal structured-output request with a 10-second limit,
+**测试连接** sends one minimal structured-output request with a 30-second limit,
 no retry and no chat/Recap/evidence payload. It consumes the subject's durable
 model budget and neither saves nor activates the form. **保存并启用** atomically
 saves and switches the active model while the subject is idle. Normal inference
@@ -37,6 +37,29 @@ the exact same base URL. A new base URL requires a newly entered key. HTTPS and
 loopback HTTP endpoints are supported; redirects are not followed. Switching to
 offline mode retains the last saved provider details for a later switch back.
 The `replay` command always ignores saved providers and remains offline.
+
+After updating/restarting this development server, reload existing UI tabs to get
+the matching JavaScript and a new session CSRF nonce. A provider base URL must
+include its required path, e.g. `/v1`; mysoul appends `/chat/completions`.
+Provider replies can be raw schema-valid JSON or one complete outer JSON code
+fence. Extra prose, partial/multiple blocks and invalid fields remain rejected.
+
+**单次输出 token 上限** is optional: leave it blank to omit `max_tokens` entirely,
+allowing the provider to apply its own limits. **系统累计 token 预算** is independently
+optional: blank means unlimited; `0` still blocks calls. Save to apply both settings
+and restore them on restart. Legacy saved configurations and clients that omit these
+fields preserve the existing runtime limits; explicit JSON `null` means unlimited.
+New UI/owner-created work goals inherit the unlimited token choice. Existing goals
+retain their original budgets; finite goals keep their original per-step ceiling.
+Candidate trials retain their independent step/token limits and honor a smaller
+configured output cap. Call counts, deadlines, context byte limits and permissions
+remain active.
+
+Token counters are admission estimates, not billed usage. Without an output cap,
+the provider reservation includes only input/schema/framing estimates; it cannot
+bound the eventual output or bill. Use provider-side spending controls for a monetary
+cap. Reasoning models can consume a small output allowance internally before any
+JSON text is returned, so a tiny cap can make a valid connection test fail.
 
 The default uses deterministic offline responses and fixture memory. It is useful for exercising state and review workflows; it does not perform general AI work. For a deterministic file-task demonstration, set `MYSOUL_MODEL_MODE=procedure-replay`. That fixture writes `report.txt`, and reads it back when the active skill contains `Procedure: verify`.
 
@@ -122,7 +145,7 @@ The marked observation test additionally requires `MYSOUL_VALIDATE_QQ=1`. The se
 - **Recap conflict:** keep the editor contents, reload the committed version, and deliberately reconcile before resubmitting. Clear creates a new empty version and preserves raw evidence/history; it is not permanent erasure. Already admitted/in-flight data is not retrospectively wiped. Every subsequent model admission refreshes Recap version/invalidation metadata; a concurrent change during graph admission suspends for explicit continuation.
 - **Memory unavailable:** the UI/context reports degraded recall. Local evidence and pending memory writes remain in SQLite. Restore the configured engine and restart; delivery uses stable evidence IDs. Do not change the embedding model in place.
 - **Skill review:** select evidence, reflect or submit bounded Markdown, inspect the diff and objective tests, then explicitly approve the tested hash. Reject unsupported proposals. Rollback selects the default for subsequent work; historical task versions and evidence remain.
-- **Budget exhausted:** stop before any new inference. Counters are durable per subject; change trusted limits through local environment configuration if justified. Provider reservations conservatively include prompt/schema bytes, output caps and configured attempts; they are not measured billing or tokenizer counts.
+- **Budget exhausted:** stop before new inference when a configured finite budget is reached. Counters are durable per subject; change the token budget under model settings or set runtime environment limits. With capped output, provider reservations include prompt/schema bytes, output caps and configured attempts. Uncapped output reserves input/framing estimates only. Neither counter is measured billing or tokenizer usage.
 - **Backups:** stop the service, copy the entire data directory including both SQLite databases, skill revisions, token and memory directory. A stopped service avoids inconsistent cross-file snapshots. Restore into a separate directory, start one process there, and verify histories before returning to daily use. Retain the original backup.
 - **Retention:** raw transcripts/evidence and Recap history are retained locally. Specify a separate targeted deletion policy before sustained live use; clearing Recap does not erase backend evidence or backups.
 - **Reply recovery:** each event claims a durable reply intent before execution. On restart, a confirmed or uncertain operation is recovered from that association; a new reply goal is never silently created. Coalesced conversation batches produce at most one reply. Oversized events retain full evidence and an explicit overflow outcome so unrelated inbox entries continue.

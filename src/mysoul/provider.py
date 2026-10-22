@@ -48,7 +48,16 @@ class OpenAICompatibleModel:
                     message = response.json()["choices"][0]["message"]
                     if message.get("refusal"):
                         raise ProviderError("Provider refused request")
-                    return schema.model_validate_json(message["content"])
+                    content = message["content"]
+                    if isinstance(content, str):
+                        lines = content.strip().splitlines()
+                        if (
+                            len(lines) >= 3
+                            and lines[0].strip().lower() in {"```", "```json"}
+                            and lines[-1].strip() == "```"
+                        ):
+                            content = "\n".join(lines[1:-1])
+                    return schema.model_validate_json(content)
                 except (httpx.HTTPError, ValueError, KeyError, IndexError, TypeError) as exc:
                     cause = exc
         raise ProviderError(
@@ -56,7 +65,7 @@ class OpenAICompatibleModel:
         ) from cause
 
     def payload(self, context, limits, schema, extra=""):
-        return {
+        payload = {
             "model": self.model,
             "messages": [
                 {
@@ -69,15 +78,17 @@ class OpenAICompatibleModel:
                 {"role": "user", "content": context.payload()},
             ],
             "response_format": {"type": "json_object"},
-            "max_tokens": limits.max_tokens,
         }
+        if limits.max_tokens is not None:
+            payload["max_tokens"] = limits.max_tokens
+        return payload
 
     def reservation(self, context, limits, tool_specs=None):
         schema = ActivityDecision if tool_specs is None else StepDecision
         extra = "" if tool_specs is None else " Available tools: " + json.dumps(tool_specs)
-        # Conservative byte bound includes prompts, JSON schema and framing. Not a cost estimate.
+        # Uncapped output has no known reservation bound; count input/framing only then.
         bound = len(json.dumps(self.payload(context, limits, schema, extra)).encode("utf-8")) + 256
-        return (bound + limits.max_tokens) * (limits.retries + 1)
+        return (bound + (limits.max_tokens or 0)) * (limits.retries + 1)
 
     async def decide(self, context: ContextBundle, limits: ModelLimits):
         return await self._request(context, limits, ActivityDecision)

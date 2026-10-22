@@ -19,7 +19,7 @@ async function fixture(chat,modelRequest) {
   const {window}=dom,document=window.document;
   const server={state:{fatigue:0,activity:"rest",mode:"normal",model_calls:0,tokens_used:0},limits:{model_calls:100,tokens:50000},backend:"replay",send_enabled:false,persona:{public:"A companion"},recap:{version:0,text:"",refs:[]},gates:{provider:"deferred",mempalace:"deferred",qq:"deferred",isolation:"disabled"},goals:[],activities:[],interactions:[],drafts:[],effects:[]};
   const sends=[];
-  server.model={version:0,mode:"replay",url:"",model:"",key_present:false,source:"runtime"};
+  server.model={version:0,mode:"replay",url:"",model:"",key_present:false,source:"runtime",output_token_limit:null,token_budget:50000};
   window.HTMLDialogElement.prototype.showModal=function(){this.open=true;};
   window.HTMLDialogElement.prototype.close=function(){this.open=false;this.dispatchEvent(new window.Event("close"));};
   window.markdownit=MarkdownIt;window.createMessageRenderer=createMessageRenderer;window.shouldSubmitKey=shouldSubmitKey;
@@ -37,7 +37,7 @@ async function fixture(chat,modelRequest) {
       const body=JSON.parse(options.body);
       if(modelRequest)await modelRequest(path,body);
       if(path==="/api/model/test")result={ok:true};
-      else {server.model={...body,version:body.expected_version+1,key_present:true,source:"local"};delete server.model.api_key;result=server.model;}
+      else {server.model={...body,version:body.expected_version+1,key_present:true,source:"local"};delete server.model.api_key;server.limits.tokens=body.token_budget;result=server.model;}
     }else if(path==="/api/evidence"||path==="/api/recap/history")result=[];
     else throw new Error(`Unexpected fixture request: ${path}`);
     return {ok:true,status:200,json:async()=>structuredClone(result)};
@@ -140,6 +140,26 @@ test("invalid provider fields cannot block switching back to offline replay",asy
     await until(()=>requests.length===1&&!d.getElementById("model-form").hasAttribute("aria-busy"));
     assert.equal(requests[0].body.mode,"replay");
     assert.equal(requests[0].body.url,"");
+  }finally{ui.close();}
+});
+
+test("empty token settings submit explicit unlimited values and display unlimited budget",async()=>{
+  const requests=[];
+  const ui=await fixture(null,async(path,body)=>requests.push(body));
+  try{
+    const d=ui.document;
+    assert.ok(d.getElementById("model-output-limit"),"output limit setting is missing");
+    assert.ok(d.getElementById("model-token-budget"),"total token setting is missing");
+    for(const id of ["model-output-limit","model-token-budget"]){
+      d.getElementById(id).value="";
+      d.getElementById(id).dispatchEvent(new ui.window.Event("input",{bubbles:true}));
+    }
+    d.getElementById("model-form").dispatchEvent(new ui.window.Event("submit",{bubbles:true,cancelable:true}));
+    await until(()=>requests.length===1&&!d.getElementById("model-form").hasAttribute("aria-busy"));
+    assert.equal(requests[0].output_token_limit,null);
+    assert.equal(requests[0].token_budget,null);
+    assert.match(d.getElementById("budget-tokens").textContent,/不限/);
+    assert.equal(d.getElementById("notice-text").textContent,"");
   }finally{ui.close();}
 });
 

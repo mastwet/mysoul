@@ -128,3 +128,60 @@ for commands, screenshot references, third-party notice and review boundaries.
   `assets/model-settings-mobile.png`. No real API key was entered or provider called.
 - Preview remains an offline procedure demonstration. The real provider, full
   MemPalace, authorized QQ and isolation acceptance boundaries remain unchanged.
+
+## Reasoning model connection and optional token limits
+
+- User authorized a local gateway test. The plain Hello request succeeded, but
+  the old 128-output-token probe returned HTTP 200 with `finish_reason=length`
+  and an incomplete JSON/code fence after 123 reasoning tokens. A larger-cap
+  request returned valid JSON in roughly 11 seconds, exceeding the old 10-second
+  probe deadline. The user's saved base URL also omitted `/v1`; its chat endpoint
+  returned HTTP 404. The configured base URL was corrected to include `/v1`.
+- The probe now uses a 30-second deadline with no retries. Optional output caps
+  omit `max_tokens` when null; the system's cumulative token budget independently
+  accepts null for unlimited. Both are persisted and displayed accurately. Null
+  budget checks cover life, reflection, Recap, execution and candidate accounting.
+  Existing finite goals/trials retain their limits; smaller explicit output caps
+  propagate into candidate trials. Omitted fields and old saved configurations
+  preserve existing finite budgets rather than silently disabling them.
+- RED→GREEN regressions cover output-field omission in actual HTTP payloads,
+  reasoning-response truncation, unlimited chat/work/Recap, restart persistence,
+  zero-budget blocking, compatibility migration, and finite goal/candidate caps.
+  Two independent review findings on candidate inheritance and finite-goal output
+  reservations were reproduced and fixed; follow-up found no important issue.
+- Real gateway evidence: `gemini-3.8-flash-tiered` passed the actual local
+  `/api/model/test` without saving or switching the model (~6 seconds), and the
+  explicitly opted-in real provider contract test passed (1 passed). The user's
+  existing `gemini-3.8-flash-high` then passed the same real connection probe
+  (~5 seconds). The selected model was retained, the base URL corrected, and both
+  requested token limits saved as unlimited. No secret was added to source/docs.
+- Full verification: **150 Python tests passed, 8 explicit gates skipped**;
+  **12 Node UI tests passed**; Ruff, JS syntax and wheel build passed. The real
+  provider test above was run separately with explicit opt-in. Screenshot:
+  `assets/model-token-limits.png`. Full MemPalace, QQ and isolation remain pending;
+  this provider result does not establish complete v0.1 acceptance.
+
+## Actual chat follow-through
+
+- The user's original open tab still had the older JavaScript and raised
+  `Cannot read properties of null (reading 'toLocaleString')` after budgets became
+  unlimited. Reloading that exact tab loaded the nullable-budget renderer and
+  refreshed its CSRF session. The temporary second verification tab was closed.
+- The actual chat API still returned `Model unavailable` after approximately
+  12 seconds. Replaying the assembled owner context against the gateway returned
+  HTTP 200 with a complete, schema-valid ActivityDecision inside a Markdown JSON
+  fence. Raw Pydantic JSON parsing rejected the outer wrapper; validating the
+  unwrapped document succeeded. The adapter now accepts only one complete outer
+  JSON/plain fence and applies unchanged schema/tool validation afterward.
+- Three accepted fence variants and five strict rejection cases were tested;
+  an authenticated actual chat-API fixture verifies the provider reply reaches
+  the persisted interaction. Those acceptance tests failed before the fix.
+- After restarting the corrected backend and reloading the original user tab,
+  the browser sent `聊天验收：你好，请用一句中文回复。` using the saved real
+  `gemini-3.8-flash-high` configuration. The page displayed the actual response
+  `你好，很高兴为您服务！`, removed its pending row, re-enabled/focused the composer,
+  and had no browser console error. Screenshot: `assets/live-chat-success.png`.
+- Final verification: **159 Python tests passed, 8 explicit gates skipped**;
+  **12 Node UI tests passed**; Ruff, JS syntax and wheel build passed. A fresh
+  review found no important issue in the normalization. The separate real provider
+  contract result above remains valid; other real integration gates remain pending.

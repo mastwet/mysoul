@@ -226,6 +226,7 @@ function renderSnapshot(force=false) {
   $("reset-model").hidden=!modelDirty;
   if(!modelDirty&&!busyScopes.has($("model-form"))){
     modelVersion=model.version;$("model-mode").value=model.mode;$("model-url").value=model.url;$("model-name").value=model.model;
+    $("model-output-limit").value=model.output_token_limit??"";$("model-token-budget").value=model.token_budget??"";
     $("model-key").placeholder=model.key_present?"已保存密钥，留空表示保留":"填写模型服务的 API Key";
     $("model-key-note").textContent=model.key_present?"密钥已配置，不会回显。更改 API 地址时，请重新填写密钥。":"与本机操作令牌不同。密钥保存在本机，不会回显。";
     syncModelFields();
@@ -239,7 +240,8 @@ function renderSnapshot(force=false) {
   const limits=snapshot.limits||{};
   $("calls").textContent=state.model_calls.toLocaleString();$("tokens").textContent=state.tokens_used.toLocaleString();
   for(const [id,value,limit] of [["calls",state.model_calls,limits.model_calls],["tokens",state.tokens_used,limits.tokens]]){
-    $(`budget-${id}`).textContent=`${value.toLocaleString()}${limit===undefined?"":` / ${limit.toLocaleString()}`}`;
+    $(`budget-${id}`).textContent=`${value.toLocaleString()}${limit===null?" / 不限":limit===undefined?"":` / ${limit.toLocaleString()}`}`;
+    $(`${id}-meter`).hidden=limit===null;
     $(`${id}-meter`).max=Math.max(1,limit??value);$(`${id}-meter`).value=value;
   }
   if(!lifeDirty&&!busyScopes.has($("life-form"))){$("mode").value=state.mode;$("fatigue-input").value=percent;$("fatigue-range").value=percent;}
@@ -370,7 +372,7 @@ function syncModelFields(){
   const provider=$("model-mode").value==="provider";
   $("provider-fields").hidden=!provider;$("test-model").hidden=!provider;
   $("model-url").required=provider;$("model-name").required=provider;
-  for(const id of ["model-url","model-name","model-key"])$(id).disabled=!provider;
+  for(const id of ["model-url","model-name","model-key","model-output-limit"])$(id).disabled=!provider;
 }
 function editModel(){modelDirty=true;$("reset-model").hidden=false;$("model-feedback").textContent="";syncModelFields();}
 $("model-form").addEventListener("input",editModel);
@@ -378,7 +380,8 @@ $("model-mode").addEventListener("change",editModel);
 $("reset-model").addEventListener("click",()=>{modelDirty=false;$("model-key").value="";$("model-feedback").textContent="";notice("");renderSnapshot();});
 function modelInput(){
   const provider=$("model-mode").value==="provider", saved=snapshot.model;
-  return {expected_version:modelVersion,mode:$("model-mode").value,url:provider?$("model-url").value:saved.url,model:provider?$("model-name").value:saved.model,api_key:provider?$("model-key").value:""};
+  const optionalNumber=id=>$(id).value.trim()===""?null:Number($(id).value);
+  return {expected_version:modelVersion,mode:$("model-mode").value,url:provider?$("model-url").value:saved.url,model:provider?$("model-name").value:saved.model,api_key:provider?$("model-key").value:"",output_token_limit:provider?optionalNumber("model-output-limit"):saved.output_token_limit,token_budget:optionalNumber("model-token-budget")};
 }
 $("test-model").addEventListener("click",()=>{
   if(!$("model-form").reportValidity())return;

@@ -11,7 +11,7 @@ from pydantic import Field, model_validator
 
 from mysoul.config import Settings
 from mysoul.domain import Contract, Goal, SkillVersion, StepDecision, uid
-from mysoul.model import ReplayModel, reservation
+from mysoul.model import ReplayModel, budget_exceeded, budget_reached, reservation
 from mysoul.storage import Conflict
 
 
@@ -71,7 +71,7 @@ class BudgetedCandidateModel:
         if state.dispatch_epoch != self.epoch:
             raise Conflict("Candidate evaluation superseded")
         if (state.model_calls + attempts > self.owner.settings.model_call_limit
-                or state.tokens_used + reserve > self.owner.settings.token_budget):
+                or budget_exceeded(state.tokens_used, reserve, self.owner.settings.token_budget)):
             raise Conflict("Candidate evaluation budget exhausted")
         state.model_calls += attempts
         state.tokens_used += reserve
@@ -112,7 +112,9 @@ class CandidateRunner:
             model = BudgetedCandidateModel(model, self.budget_owner, epoch)
         with TemporaryDirectory(prefix="mysoul-candidate-") as directory:
             async with SoulService(Settings(
-                data_dir=Path(directory), model_call_limit=8, token_budget=32000
+                data_dir=Path(directory), model_call_limit=8, token_budget=32000,
+                model_output_limit=(self.budget_owner.settings.model_output_limit
+                                    if self.budget_owner else None),
             ), model=model) as soul:
                 version = SkillVersion(content_hash=content_hash, text=text)
                 if soul.skills._write(version.text) != content_hash:
@@ -167,7 +169,7 @@ class CandidateRunner:
             state = self.budget_owner.store.load_subject()
             epoch = state.dispatch_epoch
             if (state.model_calls >= self.budget_owner.settings.model_call_limit
-                    or state.tokens_used >= self.budget_owner.settings.token_budget):
+                    or budget_reached(state.tokens_used, self.budget_owner.settings.token_budget)):
                 raise Conflict("Candidate evaluation budget exhausted")
         base = self.skills.store.get("skill_version", proposal.base_hash)
         baseline, candidate = [], []

@@ -20,6 +20,8 @@ class ModelUpdate(Contract):
     url: str = Field(default="", max_length=2048)
     model: str = Field(default="", max_length=200)
     api_key: SecretStr = Field(default=SecretStr(""), max_length=8192)
+    output_token_limit: int | None = Field(default=None, ge=1)
+    token_budget: int | None = Field(default=None, ge=0)
 
     @field_validator("url")
     @classmethod
@@ -69,6 +71,8 @@ class ModelConfiguration(Contract):
     model: str = ""
     api_key: SecretStr = SecretStr("")
     source: Literal["runtime", "environment", "local"] = "runtime"
+    output_token_limit: int | None = Field(default=None, ge=1)
+    token_budget: int | None = Field(default=None, ge=0)
 
     def public(self):
         return {
@@ -78,6 +82,8 @@ class ModelConfiguration(Contract):
             "model": self.model,
             "key_present": bool(self.api_key.get_secret_value()),
             "source": self.source,
+            "output_token_limit": self.output_token_limit,
+            "token_budget": self.token_budget,
         }
 
     def create_model(self):
@@ -138,7 +144,12 @@ class ModelSettings:
             if os.name == "nt":
                 data = windows_protect(data, decrypt=True)
             try:
-                return ModelConfiguration.model_validate_json(data)
+                configuration = ModelConfiguration.model_validate_json(data)
+                if "token_budget" not in configuration.model_fields_set:
+                    configuration.token_budget = settings.token_budget
+                if "output_token_limit" not in configuration.model_fields_set:
+                    configuration.output_token_limit = settings.model_output_limit
+                return configuration
             except ValueError:
                 raise ValueError("Saved model settings cannot be read") from None
         if settings.model_mode == "provider":
@@ -148,11 +159,17 @@ class ModelSettings:
                 url=os.environ.get("MYSOUL_PROVIDER_URL", ""),
                 model=os.environ.get("MYSOUL_MODEL", ""),
                 api_key=os.environ.get("MYSOUL_API_KEY", ""),
+                output_token_limit=settings.model_output_limit,
+                token_budget=settings.token_budget,
             )
             return self.resolve(validated, ModelConfiguration()).model_copy(
                 update={"version": 0, "source": "environment"}
             )
-        return ModelConfiguration(mode=settings.model_mode)
+        return ModelConfiguration(
+            mode=settings.model_mode,
+            output_token_limit=settings.model_output_limit,
+            token_budget=settings.token_budget,
+        )
 
     def resolve(self, update, current):
         if update.expected_version != current.version:
@@ -174,6 +191,16 @@ class ModelSettings:
             model=update.model,
             api_key=key,
             source="local",
+            output_token_limit=(
+                update.output_token_limit
+                if "output_token_limit" in update.model_fields_set
+                else current.output_token_limit
+            ),
+            token_budget=(
+                update.token_budget
+                if "token_budget" in update.model_fields_set
+                else current.token_budget
+            ),
         )
 
     def save(self, configuration):

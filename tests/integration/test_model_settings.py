@@ -128,7 +128,7 @@ def test_probe_reserves_its_actual_activity_schema_before_sending(tmp_path, prov
         model = OpenAICompatibleModel("https://provider.test/v1", "raw-id", "private-test-key")
         required = model.reservation(
             ContextBundle(task="Connection test. Choose rest."),
-            ModelLimits(max_tokens=128, timeout=10, retries=0),
+            ModelLimits(max_tokens=None, timeout=30, retries=0),
         )
         import asyncio
 
@@ -137,6 +137,150 @@ def test_probe_reserves_its_actual_activity_schema_before_sending(tmp_path, prov
         response = client.post("/api/model/test", json=values())
         assert response.status_code == 409
         assert not provider
+
+
+def test_probe_accepts_reasoning_provider_without_a_small_output_cap(tmp_path, monkeypatch):
+    original = OpenAICompatibleModel.__init__
+    payloads = []
+
+    def handler(request):
+        payload = json.loads(request.content)
+        payloads.append(payload)
+        if payload.get("max_tokens", 10000) < 512:
+            return httpx.Response(
+                200, json={"choices": [{"finish_reason": "length", "message": {"content": "```"}}]}
+            )
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {"finish_reason": "stop", "message": {"content": '{"activity":"rest"}'}}
+                ]
+            },
+        )
+
+    def initialize(self, url, model, key, **kwargs):
+        original(self, url, model, key, transport=httpx.MockTransport(handler))
+
+    monkeypatch.setattr(OpenAICompatibleModel, "__init__", initialize)
+    with connect(Settings(data_dir=tmp_path)) as client:
+        result = client.post(
+            "/api/model/test", json=values(output_token_limit=None, token_budget=None)
+        )
+        assert result.status_code == 200
+        assert "max_tokens" not in payloads[0]
+        assert client.get("/api/model").json()["mode"] == "replay"
+
+
+def test_fenced_provider_reply_reaches_the_actual_chat_api(tmp_path, monkeypatch):
+    original = OpenAICompatibleModel.__init__
+
+    def handler(request):
+        decision = {"activity": "read_chat", "chat_action": "reply", "reply": "Hello from provider"}
+        return httpx.Response(
+            200,
+            json={
+                "choices": [{"message": {"content": "```json\n" + json.dumps(decision) + "\n```"}}]
+            },
+        )
+
+    def initialize(self, url, model, key, **kwargs):
+        original(self, url, model, key, transport=httpx.MockTransport(handler))
+
+    monkeypatch.setattr(OpenAICompatibleModel, "__init__", initialize)
+    with connect(Settings(data_dir=tmp_path)) as client:
+        assert client.post("/api/model", json=values()).status_code == 200
+        result = client.post("/api/chat", json={"text": "hello"})
+        assert result.status_code == 200
+        assert result.json()["text"] == "Hello from provider"
+        assert client.get("/api/status").json()["interactions"][-1]["text"] == "Hello from provider"
+
+
+def test_unlimited_model_budget_persists_and_owner_chat_still_runs(tmp_path, provider):
+    with connect(Settings(data_dir=tmp_path)) as client:
+        response = client.post(
+            "/api/model", json=values(output_token_limit=None, token_budget=None)
+        )
+        assert response.status_code == 200
+        assert response.json()["output_token_limit"] is None
+        assert response.json()["token_budget"] is None
+        assert client.get("/api/status").json()["limits"]["tokens"] is None
+        assert client.post("/api/chat", json={"text": "hello"}).status_code == 200
+        assert "max_tokens" not in json.loads(provider[0].content)
+    with connect(Settings(data_dir=tmp_path)) as client:
+        assert client.get("/api/status").json()["limits"]["tokens"] is None
+
+
+def test_explicit_zero_budget_still_blocks_provider_calls(tmp_path, provider):
+    with connect(Settings(data_dir=tmp_path)) as client:
+        assert (
+            client.post(
+                "/api/model", json=values(output_token_limit=512, token_budget=0)
+            ).status_code
+            == 200
+        )
+        assert (
+            client.post("/api/model/test", json=values(api_key="", expected_version=1)).status_code
+            == 409
+        )
+        client.post("/api/chat", json={"text": "hello"})
+        assert not provider
+
+
+def test_omitted_budget_fields_preserve_limits_for_existing_clients(tmp_path, provider):
+    with connect(Settings(data_dir=tmp_path)) as client:
+        assert (
+            client.post(
+                "/api/model", json=values(output_token_limit=512, token_budget=7000)
+            ).status_code
+            == 200
+        )
+        updated = client.post(
+            "/api/model", json=values(model="next", api_key="", expected_version=1)
+        ).json()
+        assert updated["token_budget"] == 7000
+        assert updated["output_token_limit"] == 512
+
+
+def test_old_saved_settings_keep_runtime_budget_until_explicitly_changed(tmp_path, provider):
+    import os
+
+    from mysoul.model_settings import windows_protect
+
+    with connect(Settings(data_dir=tmp_path)) as client:
+        assert client.post("/api/model", json=values()).status_code == 200
+    path = tmp_path / "model.settings"
+    data = path.read_bytes()
+    body = json.loads(windows_protect(data, decrypt=True) if os.name == "nt" else data)
+    body.pop("token_budget")
+    body.pop("output_token_limit")
+    data = json.dumps(body).encode()
+    path.write_bytes(windows_protect(data) if os.name == "nt" else data)
+    with connect(Settings(data_dir=tmp_path, token_budget=7000)) as client:
+        assert client.get("/api/model").json()["token_budget"] == 7000
+
+
+async def test_unlimited_work_and_recap_run_above_previous_token_ceiling(tmp_path):
+    from mysoul.domain import ContextBundle, Event, Goal
+    from mysoul.evolution import ProcedureReplayModel
+    from mysoul.laputa import consolidate_recap
+
+    class Model(ProcedureReplayModel):
+        async def execute_step(self, context, tool_specs, limits):
+            assert limits.max_tokens is None
+            return await super().execute_step(context, tool_specs, limits)
+
+    async with SoulService(Settings(data_dir=tmp_path, token_budget=None), model=Model()) as soul:
+        state = soul.store.load_subject()
+        state.tokens_used = 1_000_000
+        soul.store.save_transition(state.dispatch_epoch, state)
+        activity = await soul.start_goal(Goal(objective="Write report.txt", token_limit=None))
+        assert activity.status == "completed"
+        await soul.life.choose([Event(content="hello", dedup_key="unlimited")], ContextBundle())
+        assert soul.recap.pending()
+        result = await consolidate_recap(soul, soul.store.load_subject().dispatch_epoch)
+        assert result.version > 0
+        await soul.activities.idle()
 
 
 @pytest.mark.parametrize(
@@ -245,7 +389,7 @@ async def test_saved_provider_candidate_factory_is_pinned_even_if_environment_ch
 
     monkeypatch.setattr(OpenAICompatibleModel, "__init__", initialize)
     async with SoulService(Settings(data_dir=tmp_path)) as soul:
-        await soul.configure_model(ModelUpdate(**values()))
+        await soul.configure_model(ModelUpdate(**values(output_token_limit=64)))
         monkeypatch.setenv("MYSOUL_PROVIDER_URL", "https://wrong.test/v1")
         monkeypatch.setenv("MYSOUL_API_KEY", "wrong-key")
         soul.store.add_evidence(Evidence(id="feedback", text="verify output"))
@@ -264,6 +408,7 @@ async def test_saved_provider_candidate_factory_is_pinned_even_if_environment_ch
         assert requests
         assert all(r.url.host == "provider.test" for r in requests)
         assert all(r.headers["Authorization"] == "Bearer private-test-key" for r in requests)
+        assert all(json.loads(r.content)["max_tokens"] == 64 for r in requests)
 
 
 def test_failed_probe_is_not_retried_or_saved_and_key_is_not_in_error(tmp_path, monkeypatch):

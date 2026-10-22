@@ -263,7 +263,10 @@ def create_app(settings: Settings | None = None, *, token=None, service=None):
     async def start_goal(body: ChatInput):
         if jobs or app.state.soul.admission.busy:
             raise Conflict("Foreground task already running")
-        goal = Goal(objective=body.text)
+        goal = Goal(
+            objective=body.text,
+            token_limit=None if app.state.soul.settings.token_budget is None else 8000,
+        )
         app.state.soul.store.save_goal(goal)
         launch(app.state.soul.start_goal(goal))
         return {"goal_id": goal.id, "status": "queued"}

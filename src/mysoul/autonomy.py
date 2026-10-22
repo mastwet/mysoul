@@ -4,6 +4,7 @@ import json
 from hashlib import sha256
 
 from mysoul.domain import Activity, ActivityDecision, Event, Evidence, Goal, Scope, now
+from mysoul.model import budget_reached
 from mysoul.storage import Conflict
 
 
@@ -23,7 +24,10 @@ class ActivityRouter:
             if not decision.goal_id or not soul.store.get("goal", decision.goal_id):
                 ident = "owner-work:" + event.id
                 if not soul.store.get("goal", ident):
-                    soul.store.save_goal(Goal(id=ident, objective=event.content[:8000]))
+                    soul.store.save_goal(Goal(
+                        id=ident, objective=event.content[:8000],
+                        token_limit=None if soul.settings.token_budget is None else 8000,
+                    ))
                 decision = decision.model_copy(update={"goal_id": ident})
         soul.store.put_new("activity_choice", event.id, {
             "id": event.id, "event_id": event.id, "epoch": epoch,
@@ -106,7 +110,7 @@ class ActivityRouter:
         expired = state.rest_until is not None and state.rest_until <= now()
         if ((state.mode == "quiet" and not expired) or state.fatigue >= 0.9
                 or state.model_calls >= soul.settings.model_call_limit
-                or state.tokens_used >= soul.settings.token_budget):
+                or budget_reached(state.tokens_used, soul.settings.token_budget)):
             # Cheap gates must not consume the signal they have not admitted.
             await soul.life.choose([])
             return
@@ -186,7 +190,10 @@ class ActivityRouter:
                 ident = "owner-work:" + event.id
                 goal = soul.store.get("goal", ident)
                 if goal is None:
-                    committed = Goal(id=ident, objective=event.content[:8000])
+                    committed = Goal(
+                        id=ident, objective=event.content[:8000],
+                        token_limit=None if soul.settings.token_budget is None else 8000,
+                    )
                     soul.store.save_goal(committed)
                     goal = committed.model_dump(mode="json")
             goal = Goal.model_validate(goal)

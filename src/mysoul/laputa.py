@@ -104,7 +104,7 @@ async def consolidate_recap(soul, expected_epoch):
     import asyncio
 
     from mysoul.domain import ContextBundle, ModelLimits
-    from mysoul.model import reservation
+    from mysoul.model import budget_exceeded, reservation
 
     refs = soul.recap.pending()[:4]
     if not refs:
@@ -130,10 +130,10 @@ async def consolidate_recap(soul, expected_epoch):
     state = soul.store.load_subject()
     if state.dispatch_epoch != expected_epoch:
         raise Conflict("Recap synthesis superseded")
-    limits = ModelLimits()
+    limits = ModelLimits(max_tokens=soul.settings.model_output_limit)
     reserve, attempts = reservation(soul.model, context, limits, [])
     if (state.model_calls + attempts > soul.settings.model_call_limit
-            or state.tokens_used + reserve > soul.settings.token_budget):
+            or budget_exceeded(state.tokens_used, reserve, soul.settings.token_budget)):
         raise Conflict("Recap synthesis budget exhausted")
     state.model_calls += attempts
     state.tokens_used += reserve

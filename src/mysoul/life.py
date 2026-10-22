@@ -10,7 +10,7 @@ from mysoul.domain import (
     Scope,
     now,
 )
-from mysoul.model import ModelAdapter, reservation
+from mysoul.model import ModelAdapter, budget_exceeded, reservation
 from mysoul.storage import StateStore
 
 
@@ -46,7 +46,7 @@ class LifeController:
         advance_fatigue(state, self.settings, self.clock())
         owner = any(e.trust == "owner_command" for e in events)
         expired = state.rest_until is not None and self.clock() >= state.rest_until
-        limits = ModelLimits()
+        limits = ModelLimits(max_tokens=self.settings.model_output_limit)
         if context is None:
             scope = events[0].scope if events else Scope()
             context = ContextBundle(
@@ -56,7 +56,7 @@ class LifeController:
         blocked = (
             (not events and not expired)
             or state.model_calls + attempts > self.settings.model_call_limit
-            or state.tokens_used + reserve > self.settings.token_budget
+            or budget_exceeded(state.tokens_used, reserve, self.settings.token_budget)
             or (state.fatigue >= 0.9 and not owner)
             or (
                 state.mode == "quiet"
@@ -83,7 +83,7 @@ class LifeController:
         )
         # Reserve after final context admission, including any mode instructions.
         reserve, attempts = reservation(self.model, context, limits)
-        if state.tokens_used + reserve > self.settings.token_budget:
+        if budget_exceeded(state.tokens_used, reserve, self.settings.token_budget):
             return ActivityDecision(activity=Activity.REST, rationale="Context budget exhausted")
         # Reserve maximum output tokens before inference, including failed requests.
         state.model_calls += attempts

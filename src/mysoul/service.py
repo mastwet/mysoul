@@ -19,7 +19,7 @@ from mysoul.laputa import ContextAssembler, ContextOverflow, RecapStore
 from mysoul.lease import SubjectLease
 from mysoul.life import LifeController
 from mysoul.memory import FixtureMemory
-from mysoul.model import ReplayModel, reservation
+from mysoul.model import ReplayModel, budget_exceeded, reservation
 from mysoul.model_settings import ModelConfiguration, ModelSettings
 from mysoul.phone.replay import ReplayPhone
 from mysoul.scheduler import Scheduler
@@ -36,9 +36,14 @@ class SoulService:
         self.store.load_subject()
         self.model_settings = ModelSettings(settings.data_dir)
         self.model_configuration = (self.model_settings.load(settings) if model is None
-                                    else ModelConfiguration(mode=settings.model_mode))
+                                    else ModelConfiguration(
+                                        mode=settings.model_mode,
+                                        output_token_limit=settings.model_output_limit,
+                                        token_budget=settings.token_budget))
         self.model = model if model is not None else self.model_configuration.create_model()
         settings.model_mode = self.model_configuration.mode
+        settings.model_output_limit = self.model_configuration.output_token_limit
+        settings.token_budget = self.model_configuration.token_budget
         if phone is None and settings.backend == "napcat":
             import os
 
@@ -481,14 +486,14 @@ class SoulService:
         context.evidence = evidence
         if len(context.payload()) > 16000:
             raise ValueError("Reflection evidence exceeds context budget")
-        limits = ModelLimits(retries=0)
+        limits = ModelLimits(max_tokens=self.settings.model_output_limit, retries=0)
         reserve, attempts = reservation(self.model, context, limits, [])
         state = self.store.load_subject()
         if state.dispatch_epoch != epoch:
             raise Conflict("Reflection superseded during context preparation")
         if (
             state.model_calls + attempts > self.settings.model_call_limit
-            or state.tokens_used + reserve > self.settings.token_budget
+            or budget_exceeded(state.tokens_used, reserve, self.settings.token_budget)
         ):
             raise Conflict("Reflection budget exhausted")
         state.activity = Activity.REFLECT
@@ -554,6 +559,8 @@ class SoulService:
         self.model = self.life.model = self.executor.model = model
         self.model_configuration = configuration
         self.settings.model_mode = configuration.mode
+        self.settings.model_output_limit = configuration.output_token_limit
+        self.settings.token_budget = configuration.token_budget
         close = getattr(old, "close", None)
         if close:
             await close()
@@ -573,11 +580,11 @@ class SoulService:
         try:
             # Deliberately bypass ContextAssembler: probes send no private application data.
             context = ContextBundle(task="Connection test. Choose rest.")
-            limits = ModelLimits(max_tokens=128, timeout=10, retries=0)
+            limits = ModelLimits(max_tokens=configuration.output_token_limit, timeout=30, retries=0)
             reserve, attempts = reservation(model, context, limits)
             state = self.store.load_subject()
             if (state.model_calls + attempts > self.settings.model_call_limit
-                    or state.tokens_used + reserve > self.settings.token_budget):
+                    or budget_exceeded(state.tokens_used, reserve, self.settings.token_budget)):
                 raise Conflict("Model probe budget exhausted")
             state.model_calls += attempts
             state.tokens_used += reserve

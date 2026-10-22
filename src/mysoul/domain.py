@@ -85,7 +85,7 @@ class Goal(Contract):
     completion_criteria: str = "Produce the requested artifact and verify it."
     step_limit: int = Field(default=8, ge=1, le=100)
     time_limit: float = Field(default=120, gt=0, le=3600)
-    token_limit: int = Field(default=8000, ge=1)
+    token_limit: int | None = Field(default=8000, ge=1)
     tokens_used: int = Field(default=0, ge=0)
     elapsed_seconds: float = Field(default=0, ge=0)
     status: GoalStatus = "pending"
@@ -175,7 +175,7 @@ class ContextBundle(Contract):
 
 
 class ModelLimits(Contract):
-    max_tokens: int = Field(default=1024, ge=1)
+    max_tokens: int | None = Field(default=1024, ge=1)
     timeout: float = Field(default=30, gt=0)
     retries: int = Field(default=0, ge=0, le=3)
 
