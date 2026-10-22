@@ -1,10 +1,34 @@
 # Validation ledger
 
-Current result after independent review and fixes (2026-10-22): **98 passed, 8 skipped**.
+Current result after autonomous closure review and fixes (2026-10-22): **129 passed, 8 skipped**.
 Ruff and JavaScript syntax checks pass. This is a Windows offline milestone;
 real integrations remain pending. See [review disposition](review.md) and [runbook](runbook.md).
 
 All results are local development evidence, not live deployment claims.
+
+## Autonomous closure follow-up
+
+- Three missing links are now connected: life decisions dispatch bounded activities;
+  source-backed feedback/Recap consolidation runs as explicit reflection; candidate
+  regressions accept selected models and objective artifact cases with base/candidate
+  comparisons. See `closure-plan.md` and the follow-up in `review.md`.
+- RED: six activity-routing tests, four auto-Recap tests and four candidate-model tests
+  failed before implementation. GREEN: those workflows pass.
+- A fresh reviewer reproduced six Important gaps; seven regression tests initially
+  failed in the fix pass, including the regraded missing-case-record finding. Further
+  decision-admission and quiet deadline tests also failed before their fixes. Other
+  concurrency, fatigue-recovery and unknown-outcome probes pass.
+- Full suite: **129 passed, 8 skipped**. Ruff, JavaScript syntax and wheel build pass.
+- Actual browser walkthrough: owner input automatically published sourced Recap v1;
+  a reflection proposal was tested through the new candidate endpoint and displayed a
+  passing objective with its fixture model label. Screenshot: `assets/closure-ui.png`.
+- Provider selection/serialization was verified with real `OpenAICompatibleModel`
+  clients against fixture HTTP, including base/candidate isolation and parent budgets.
+  This is an offline contract result. Live configuration keys were absent in this
+  session; no real model, MemPalace or QQ operation was performed.
+- Remaining release gates: real provider (1 skip), full MemPalace (1), authorized QQ
+  observation/send (2), and deliberately unavailable isolation backend (4). Isolation
+  stays disabled and is not required for the local file-work/chat loop.
 
 ## T01
 - RED: storage test collection failed because mysoul.domain was absent.

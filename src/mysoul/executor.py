@@ -8,6 +8,7 @@ from typing import TypedDict
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.graph import END, START, StateGraph
 
+from mysoul.admission import SubjectAdmission, admitted
 from mysoul.config import Settings
 from mysoul.domain import (
     TERMINAL,
@@ -42,6 +43,7 @@ class Executor:
         self.path, self.settings, self.clock = checkpoint_path, settings, clock
         self.running: str | None = None
         self.graph = None
+        self.admission = SubjectAdmission()
 
     async def open(self):
         self.store.recover_effects()
@@ -108,6 +110,7 @@ class Executor:
         result = await self.dispatcher.dispatch(request)
         return {"result": result.model_dump(mode="json")}
 
+    @admitted("work")
     async def start(
         self, goal: Goal, context: ContextBundle | None = None, *, expected_epoch=None
     ) -> ActivityRecord:
@@ -297,6 +300,7 @@ class Executor:
             if row["goal_id"] == goal_id:
                 self._finish(ActivityRecord.model_validate(row), "cancelled")
 
+    @admitted("work")
     async def resume(self, activity_id, decision):
         if self.running:
             raise Conflict("Wait for in-flight work to settle before resuming")

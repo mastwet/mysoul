@@ -22,6 +22,31 @@ uv run python scripts/fatigue_trace.py
 
 `replay` forces offline phone, model and memory settings even if live variables exist. Environment variables are read explicitly; `.env` is not automatically loaded. Use `uv run --env-file .env ...` if desired. Never commit that file.
 
+## Automatic activity boundaries
+
+Life decisions dispatch committed work, configured news reads and explicit reflection.
+An authenticated owner work choice can commit a new goal; external source text cannot
+create work authority. Pending work and newly retained evidence produce a durable
+readiness signal. Each unchanged signal is considered once, including across restart;
+plain rest does not poll the model. A selected future rest deadline defers background
+readiness. Quiet mode suppresses incidental wakeups. Changed readiness or a new owner
+turn permits a fresh decision.
+
+Completed/failed tasks retain source-backed feedback. Failure feedback can produce
+one reviewable proposal during reflection. Pending owner/public evidence can produce
+a private Recap during that same explicit budgeted activity. Publication and segment
+retirement share a transaction; failures retain the old Recap and raw evidence. Clear
+also retires older pending consolidation segments. Whole private Recap remains excluded
+from group model requests.
+
+Candidate tests compare immutable base and candidate versions in separate temporary
+workspaces. The candidate-test endpoint accepts up to four objective cases (`id`,
+`objective`, `initial_files`, `expected_files`, `required_tools`). Offline mode uses
+the draft/verify fixture; configured provider mode uses a fresh configured provider.
+Both expose local tools only; provider calls also charge the original subject's budget.
+A favorable model judgment cannot override a failed artifact assertion. Actual provider
+behavior/improvement remains unverified. Skill activation still requires operator review.
+
 ## Live setup gates
 
 Each gate remains independent. Configuration or a skipped test is not validation.

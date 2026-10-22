@@ -58,6 +58,9 @@ async def test_failed_execution_becomes_durable_feedback_and_reviewable_proposal
         assert "failed" in evidence.text
         # Proposal creation never activates a new skill.
         assert reopened.skills.active().content_hash == proposals[0]["base_hash"]
+        # The newly offered safe continuation and its completion recap each settle once.
+        for _ in range(3):
+            await reopened.tick()
         calls = reopened.model.calls
         for _ in range(20):
             await reopened.tick()

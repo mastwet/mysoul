@@ -1,5 +1,6 @@
 """One application service shared by replay, phone ingestion and the local API."""
 
+from mysoul.admission import admitted
 from mysoul.config import Settings
 from mysoul.domain import (
     Activity,
@@ -98,6 +99,7 @@ class SoulService:
             settings,
         )
         self.lease = SubjectLease(settings.data_dir / "subject.lock")
+        self.admission = self.executor.admission
         self.phone_cursor = (self.store.get("cursor", "phone") or {}).get("value")
         self.memory_process = None
         self.owner_turns = 0
@@ -139,7 +141,8 @@ class SoulService:
 
     async def tick(self):
         try:
-            await self._phone_tick()
+            if self.admission.available():
+                await self._phone_tick()
         finally:
             # Delivery is bounded and independent of ambient events and foreground work.
             if self.settings.memory_backend == "mempalace":
@@ -147,6 +150,7 @@ class SoulService:
 
                 await flush_memory_queue(self.store, self.memory)
 
+    @admitted("life")
     async def _phone_tick(self):
         batch = await self.phone.observe(self.phone_cursor)
         self.store.enqueue_batch(batch.events, batch.cursor)
@@ -196,7 +200,7 @@ class SoulService:
                 await self._ingest(
                     event, decision=selected, admission_epoch=epoch, execute_activity=False
                 )
-            await self.activities.perform(decision, epoch, event=group[-1])
+            await self.activities.drain_choices()
         except ContextOverflow:
             # Retain full evidence and consume the bad batch so other scopes can progress.
             for event in group:
@@ -306,6 +310,7 @@ class SoulService:
                 action_id=request.action_id, outcome="failed", error=type(exc).__name__
             )
 
+    @admitted("life")
     async def receive(self, event: Event):
         # External callers never get to assert owner authority in an Event field.
         event = event.model_copy(update={"trust": "data"})
@@ -436,11 +441,15 @@ class SoulService:
                 event.id,
                 {"text": text, "scope": event.scope.model_dump(), "status": "draft"},
             )
+        self.activities.enqueue(decision, admission_epoch, event)
         result = self._record_interaction(event, result)
         if execute_activity:
-            await self.activities.perform(decision, admission_epoch, event=event)
+            await self.activities.drain_choices(
+                owner_event_id=event.id if event.trust == "owner_command" else None
+            )
         return result
 
+    @admitted("work")
     async def start_goal(self, goal: Goal, *, expected_epoch=None):
         epoch = (
             self.store.load_subject().dispatch_epoch if expected_epoch is None else expected_epoch
@@ -456,6 +465,7 @@ class SoulService:
         finally:
             self.activities.capture_feedback()
 
+    @admitted("reflection")
     async def reflect(self, evidence_refs: list[str], *, expected_epoch=None):
         from mysoul.storage import Conflict
 
@@ -501,6 +511,20 @@ class SoulService:
         )
         return proposal
 
+    @admitted("reflection")
+    async def maintain(self, epoch, refs):
+        from mysoul.laputa import consolidate_recap
+
+        await consolidate_recap(self, epoch)
+        if refs and not any(p["status"] in {"proposed", "tested", "approved"}
+                            for p in self.store.all("proposal")):
+            proposal = await self.reflect(refs, expected_epoch=epoch)
+            for ref in refs:
+                self.store.put("task_feedback", ref, {
+                    "id": ref, "status": "proposed", "learn": True, "proposal_id": proposal.id,
+                })
+
+    @admitted("reflection")
     async def test_candidate(self, proposal_id, cases=None):
         from mysoul.evolution import CandidateRunner, ProcedureReplayModel
 

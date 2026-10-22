@@ -9,6 +9,11 @@ source-scoped Recap/memory, replay and NapCat adapters, bounded file work, revie
 evolution, and a local operator UI. Real provider, full MemPalace and authorized QQ
 acceptance remain pending. Arbitrary code execution is disabled.
 
+Life choices now dispatch bounded activities; new evidence can update Recap during
+explicit reflection, and execution feedback can produce a reviewable skill proposal.
+Candidate tests compare base/candidate artifacts using an isolated fixture or the
+configured model. Skills still require operator approval before activation.
+
 ```powershell
 uv sync --locked --extra dev
 uv run python -m mysoul serve

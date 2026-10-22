@@ -122,6 +122,7 @@ class CandidateRunner:
                 error = None
                 status = "failed"
                 files_match = False
+                artifacts = {}
                 try:
                     for path, content in case.initial_files.items():
                         soul.files.write(path, content)
@@ -130,10 +131,12 @@ class CandidateRunner:
                         allowed_tools={"draft", "read_file", "write_file"},
                     ))
                     status = activity.status
-                    files_match = all(
-                        soul.files.read(path) == content
-                        for path, content in case.expected_files.items()
-                    )
+                    for path in case.expected_files:
+                        try:
+                            artifacts[path] = soul.files.read(path)
+                        except (ValueError, OSError):
+                            artifacts[path] = None
+                    files_match = artifacts == case.expected_files
                 except asyncio.CancelledError:
                     raise
                 except Exception as exc:
@@ -152,6 +155,7 @@ class CandidateRunner:
                         and all(outcome == "confirmed" for outcome in outcomes)
                     ),
                     "tools": tools, "outcomes": outcomes,
+                    "artifacts": artifacts,
                 }
 
     async def run(self, proposal_id, model_judgment=None):
@@ -173,6 +177,7 @@ class CandidateRunner:
         result = {
             "id": uid(), "base_hash": proposal.base_hash,
             "candidate_hash": proposal.candidate_hash,
+            "cases": [case.model_dump(mode="json") for case in self.cases],
             "case_hash": sha256(json.dumps([
                 {**case.model_dump(mode="json"), "required_tools": sorted(case.required_tools)}
                 for case in self.cases

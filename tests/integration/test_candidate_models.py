@@ -1,3 +1,6 @@
+import json
+
+import httpx
 import pytest
 
 from mysoul.config import Settings
@@ -82,3 +85,49 @@ async def test_candidate_model_cannot_use_live_tool_even_if_it_requests_one(tmp_
         assert result["candidate"][0]["status"] == "suspended"
         assert result["candidate"][0]["outcomes"] == ["not_sent"]
         assert not soul.store.all("goal")
+
+
+async def test_provider_mode_uses_actual_provider_serialization_and_subject_budget(
+    tmp_path, monkeypatch
+):
+    from mysoul.provider import OpenAICompatibleModel
+
+    clients, requests = [], []
+
+    def transport(request):
+        body = json.loads(request.content)
+        requests.append(body)
+        context = json.loads(body["messages"][1]["content"])
+        tools = json.loads(body["messages"][0]["content"].split(" Available tools: ", 1)[1])
+        assert {t["name"] for t in tools} == {"draft", "read_file", "write_file"}
+        if not context["step_results"]:
+            decision = StepDecision(tool="write_file", arguments={
+                "path": "report.txt", "text": "verified report"
+            })
+        elif len(context["step_results"]) == 1 and "Procedure: verify" in context["skill"]:
+            decision = StepDecision(tool="read_file", arguments={"path": "report.txt"})
+        else:
+            decision = StepDecision(done=True)
+        return httpx.Response(200, json={"choices": [{"message": {
+            "content": decision.model_dump_json()
+        }}]})
+
+    def factory(cls):
+        model = cls("http://fixture.invalid", "fixture-selected", "fixture-key",
+                    transport=httpx.MockTransport(transport))
+        clients.append(model)
+        return model
+
+    monkeypatch.setattr(OpenAICompatibleModel, "from_environment", classmethod(factory))
+    async with SoulService(Settings(data_dir=tmp_path, model_mode="provider")) as soul:
+        soul.store.add_evidence(Evidence(id="failure", text="verification was missing"))
+        proposal = soul.skills.propose("# Work\nProcedure: verify\n", ["failure"])
+        result = await soul.test_candidate(proposal.id)
+        assert len(clients) == 3
+        assert len(requests) == 5
+        assert {request["model"] for request in requests} == {"fixture-selected"}
+        assert not result["baseline"][0]["objective_pass"]
+        assert result["candidate"][0]["objective_pass"]
+        assert result["model_label"] == "fixture-selected"
+        assert soul.store.load_subject().model_calls == 5
+        assert soul.store.load_subject().tokens_used > 5 * 1024

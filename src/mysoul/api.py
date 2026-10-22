@@ -230,9 +230,10 @@ def create_app(settings: Settings | None = None, *, token=None, service=None):
 
     @app.post("/api/goals", dependencies=guard, status_code=202)
     async def start_goal(body: ChatInput):
-        if jobs or app.state.soul.executor.running:
+        if jobs or app.state.soul.admission.busy:
             raise Conflict("Foreground task already running")
         goal = Goal(objective=body.text)
+        app.state.soul.store.save_goal(goal)
         launch(app.state.soul.start_goal(goal))
         return {"goal_id": goal.id, "status": "queued"}
 
@@ -245,7 +246,8 @@ def create_app(settings: Settings | None = None, *, token=None, service=None):
     async def resume(activity_id: str, body: ResumeInput):
         soul = app.state.soul
         activity = soul.store.activity(activity_id)
-        if jobs or activity.status != "suspended" or soul.store.goal(activity.goal_id).cancelled:
+        if (jobs or soul.admission.busy or activity.status != "suspended"
+                or soul.store.goal(activity.goal_id).cancelled):
             raise Conflict("Activity cannot resume")
         launch(soul.executor.resume(activity_id, body.decision))
         return {"status": "queued"}

@@ -49,3 +49,52 @@ Final verification: **98 passed, 8 skipped**. Skips are one real provider, one r
 MemPalace, two separately authorized QQ checks, and four unavailable-isolation scenarios.
 Ruff and JavaScript syntax checks passed. Current source builds a wheel; installed-wheel
 resource and SQLite/skill initialization were checked separately.
+# Autonomous closure follow-up review (2026-10-22)
+
+A fresh read-only reviewer inspected `872da59..54e5e8f` and its surrounding
+contracts after the missing autonomous activity wiring was implemented.
+The reviewer reproduced six Important findings. All entered one fix pass:
+
+1. **Event consumed before activity intent:** owner commitments and stable activity
+   choices now persist before interaction completion. Restart drains that choice;
+   completed/suspended goals retain their existing operation identity.
+2. **Owner work lost while old inference settles:** admission persists the new
+   commitment before checking busy state. Execution waits for the old activity to
+   settle, rather than losing the new instruction.
+3. **Blocked wake consumed early:** quiet/fatigue gates do not consume readiness.
+   Mode and configured budget changes participate in wake identity; a decision that
+   made no model call does not suppress a later eligible attempt. An expired rest
+   deadline dispatches its decision, including in quiet mode.
+4. **Untrusted continuation control:** group/data choices cannot execute owner work
+   or change its continuation. Only authenticated owner choices and trusted runtime
+   scheduling may select those operations.
+5. **Suspended work absent from decisions:** readiness now offers retained progress,
+   skill version, context refs, effect outcomes and explicit continuation choices.
+   Unknown/in-flight outcomes fence automatic continue/replan; no unknown effect is
+   silently retried.
+6. **Maintenance/work overlap:** one coroutine admission covers asynchronous context
+   preparation and complete work, life decision, reflection/consolidation and candidate
+   operations. Direct executor resume uses the same admission. Owner messages bypass
+   the activity lease to advance the dispatch epoch immediately.
+
+The reviewer labeled missing custom regression definitions/artifacts Minor. The
+executor regraded it Important: an operator must be able to inspect what passed
+before approving a hash. Saved runs now retain bounded cases and observed artifacts
+alongside their hash and baseline/candidate verdicts. Cost of this ruling: more
+local validation-record storage. No reported minor remains deferred.
+
+Seven initial regression tests failed before the fix pass. A further life-decision
+admission test and a quiet rest-deadline dispatch test also failed before their fixes.
+Other concurrency probes cover consolidation versus work/test/resume/reflection,
+owner preemption, fatigue recovery and uncertain-effect fencing. The selected-model
+route is exercised through a real `OpenAICompatibleModel` with fixture HTTP: three
+fresh clients, five serialized requests, baseline failure, candidate pass and parent
+budget charging. This is not a live-provider result.
+
+Rulings for the review's declined behaviors: real provider, MemPalace and QQ gates
+stay pending under the existing plan (cost: no full v0.1 claim); code execution stays
+disabled (cost: no arbitrary execution); other-platform filesystem/race stress remains
+unverified (cost: Windows-only validation). SQLite plus the effect ledger retains the
+documented single-process crash/uncertainty boundary, not distributed exactly-once
+delivery (cost: uncertain remote operations require reconciliation). Fatigue and
+fixture skill experiments make no psychological or general-intelligence claim.

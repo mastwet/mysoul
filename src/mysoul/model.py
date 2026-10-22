@@ -43,7 +43,14 @@ class ReplayModel:
             if ready["feedback"] or ready.get("recap"):
                 return ActivityDecision(activity=Activity.REFLECT)
             if ready["goals"]:
-                return ActivityDecision(activity=Activity.WORK, goal_id=ready["goals"][0]["id"])
+                goal = ready["goals"][0]
+                if goal.get("status") == "suspended":
+                    if "continue" not in goal.get("continuation_options", []):
+                        return ActivityDecision(activity=Activity.REST)
+                    return ActivityDecision(
+                        activity=Activity.WORK, goal_id=goal["id"], continuation="continue"
+                    )
+                return ActivityDecision(activity=Activity.WORK, goal_id=goal["id"])
         activity = Activity.CHAT if context.task else Activity.REST
         return ActivityDecision(
             activity=activity,
