@@ -185,8 +185,8 @@ async def test_automatic_consolidation_excludes_other_subject_operations(tmp_pat
         paused = ActivityRecord(goal_id="paused", status="suspended")
         soul.store.save_goal(Goal(id="paused", objective="paused", status="suspended"))
         soul.store.save_activity(paused)
-        tick = asyncio.create_task(soul.tick())
-        await entered.wait()
+        tick = asyncio.create_task(soul.cognition.run_due(force=True))
+        await asyncio.wait_for(entered.wait(), 2)
         try:
             with pytest.raises(Conflict):
                 if operation == "work":
@@ -220,8 +220,8 @@ async def test_owner_epoch_can_preempt_consolidation_without_waiting_for_lease(t
             await asyncio.wait_for(soul.owner_message("new owner input"), 2)
         finally:
             release.set()
-        with pytest.raises(Conflict):
-            await tick
+        await tick
+        assert soul.cognition.status()["runs"][-1]["status"] == "superseded"
         assert soul.recap.current().version == 0
         assert not soul.admission.busy
 

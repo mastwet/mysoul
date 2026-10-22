@@ -1,3 +1,4 @@
+import json
 from hashlib import sha256
 
 from mysoul.domain import ContextBudget, ContextBundle, RecapVersion, Scope
@@ -47,6 +48,7 @@ class RecapStore:
         author="operator",
         segments=(),
         expected_epoch=None,
+        cognitive_run=None,
     ):
         if len(text) > 64000:
             raise ContextOverflow("Recap exceeds storage limit; review before publishing")
@@ -82,7 +84,29 @@ class RecapStore:
                 (version.version, version.model_dump_json()),
             )
             db.execute("UPDATE recap_head SET version=? WHERE subject='mysoul'", (version.version,))
+            if cognitive_run is not None:
+                run = cognitive_run.model_copy(deep=True)
+                policy = self.store.get("cognitive_policy", "current") or {"version": 0}
+                if policy["version"] != run.policy.version:
+                    raise Conflict("Maintenance policy changed")
+                for part in run.window.slices:
+                    source = self.store.get("cognitive_source", part.source_id)
+                    if source.get("cleared") or source["covered"] != part.start:
+                        raise Conflict("Source coverage changed")
+                    source["covered"] = part.end
+                    db.execute("UPDATE objects SET body=? WHERE kind='cognitive_source' AND id=?",
+                               (json.dumps(source), part.source_id))
+                    for ref in (source["event_id"], "reply:" + source["event_id"]):
+                        db.execute("UPDATE objects SET body=json_set(body,'$.status','managed') "
+                                   "WHERE kind='recap_segment' AND id=?", (ref,))
+                run.stage = "reflect"
+                run.recap_published_version = version.version
+                run.receipts.append("reconcile")
+                db.execute("UPDATE objects SET body=? WHERE kind='cognitive_run' AND id=?",
+                           (run.model_dump_json(), run.id))
             if clear:
+                db.execute("UPDATE objects SET body=json_set(body,'$.cleared',1) "
+                           "WHERE kind='cognitive_source'")
                 db.execute(
                     "UPDATE objects SET body=json_set(body,'$.status','cleared') "
                     "WHERE kind='recap_segment' AND json_extract(body,'$.status')='pending'"
@@ -178,10 +202,14 @@ class ContextAssembler:
         task="",
         persona_instructions="A helpful companion.",
         history=(),
+        required_evidence=(),
+        required_history=False,
     ):
         self.recap, self.memory, self.task = recap, memory, task
         self.persona_instructions = persona_instructions
         self.history = history
+        self.required_evidence = required_evidence
+        self.required_history = required_history
 
     async def build(self, scope: Scope, budget: ContextBudget) -> ContextBundle:
         # Deliberately no summary cache: every admission reads the committed head.
@@ -198,14 +226,17 @@ class ContextAssembler:
             bundle.recap = version.text
         bundle.recap_version = version.version
         bundle.recap_invalidation_epoch = version.invalidation_epoch
+        bundle.evidence = list(self.required_evidence)
         if len(bundle.payload()) > budget.max_chars:
-            raise ContextOverflow("Required instructions/task/Recap exceed context budget")
+            raise ContextOverflow("Required context and raw sources exceed context budget")
         # Most recent whole turns first for admission; emit them chronologically.
         admitted = []
         for turn in reversed(self.history):
             candidate = bundle.model_copy(deep=True)
             candidate.history = list(turn) + admitted
             if len(candidate.payload()) > budget.max_chars:
+                if self.required_history:
+                    raise ContextOverflow("Required recent turns exceed context budget")
                 break
             admitted = candidate.history
         bundle.history = admitted
@@ -218,7 +249,7 @@ class ContextAssembler:
         if len(bundle.payload()) > budget.max_chars:
             raise ContextOverflow("Committed context changed beyond admission budget")
         for hit in hits:
-            if not hit.permitted(scope):
+            if hit.id in {e.id for e in bundle.evidence} or not hit.permitted(scope):
                 continue
             history_events = {message.event_id for message in bundle.history}
             if hit.id in history_events or (

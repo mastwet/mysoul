@@ -70,6 +70,7 @@ class ActivityRouter:
     def capture_feedback(self):
         soul = self.soul
         for activity in soul.store.all("activity"):
+            soul.cognition.sources.capture_outcome(activity["id"])
             if activity["status"] not in {"completed", "failed", "suspended"}:
                 continue
             context = soul.store.get("activity_context", activity["id"])
@@ -144,7 +145,7 @@ class ActivityRouter:
             item["id"] for item in soul.store.all("task_feedback")
             if item["status"] == "pending"
         ][:4]
-        ready = {"goals": goals, "feedback": feedback, "recap": soul.recap.pending()[:4]}
+        ready = {"goals": goals, "feedback": feedback, "recap": []}
         signal = sha256(
             json.dumps([
                 ready, state.dispatch_epoch, state.mode,
@@ -156,6 +157,8 @@ class ActivityRouter:
         # permanently starve the independently scheduled owner-chat heartbeat.
         settled = wake and wake.get("admitted", True) and not expired
         if (not any(ready.values()) or settled) and await self._main_chat_initiative():
+            return
+        if (not any(ready.values()) or settled) and await soul.cognition.run_due():
             return
         if not any(ready.values()) or settled:
             decision = await soul.life.choose([])
@@ -181,6 +184,8 @@ class ActivityRouter:
         if soul.store.load_subject().model_calls == state.model_calls:
             soul.store.put("wake", signal, {"ready": ready, "admitted": False})
         await self.perform(decision, state.dispatch_epoch, key=signal, feedback=feedback)
+        if decision.activity == Activity.REST:
+            await soul.cognition.run_due()
 
     async def _main_chat_initiative(self):
         """Make at most one bounded, private owner-chat check per persisted interval."""

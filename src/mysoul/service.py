@@ -123,12 +123,16 @@ class SoulService:
         from mysoul.autonomy import ActivityRouter
 
         self.activities = ActivityRouter(self)
+        from mysoul.cognition import CognitiveService
+
+        self.cognition = CognitiveService(self)
 
     async def __aenter__(self):
         try:
             self.lease.acquire()
             self.persona.initialize()
             self._backfill_dialogue()
+            self.cognition.sources.migrate_pending()
             if self.settings.memory_backend == "mempalace":
                 from mysoul.mempalace import MemPalaceProcess
 
@@ -256,12 +260,23 @@ class SoulService:
                 pass
 
     async def context(self, scope, task=""):
+        pending = []
+        if scope.audience == "owner":
+            for source in self.store.all("cognitive_source"):
+                if not source.get("cleared") and source["covered"] < source["total"]:
+                    pending.append(self.store.evidence(source["id"]))
+        tail = self.cognition.policy().tail_turns
+        history = self.dialogue_history(scope)
+        if scope.audience == "owner":
+            history = history[-tail:] if tail else []
         bundle = await ContextAssembler(
             self.recap,
             self.memory,
             task=task,
             persona_instructions=self.persona.current().instructions(scope),
-            history=self.dialogue_history(scope),
+            history=history,
+            required_evidence=pending,
+            required_history=scope.audience == "owner",
         ).build(scope, ContextBudget(max_chars=self.settings.context_chars))
         self.context_metrics = {
             "payload_chars": len(bundle.payload()),
@@ -326,7 +341,9 @@ class SoulService:
                         "SELECT 1 FROM evidence WHERE id=?", (reply.id,)
                     ).fetchone()
                 if not present:
-                    self.store.record_interaction(event, result, reply, enqueue=False, capture=False)
+                    self.store.record_interaction(
+                        event, result, reply, enqueue=False, capture=False,
+                    )
 
     async def _draft(self, request):
         text = request.arguments.get("text", "")
@@ -622,9 +639,7 @@ class SoulService:
 
     @admitted("reflection")
     async def maintain(self, epoch, refs):
-        from mysoul.laputa import consolidate_recap
-
-        await consolidate_recap(self, epoch)
+        await self.cognition.run_due()
         if refs and not any(
             p["status"] in {"proposed", "tested", "approved"} for p in self.store.all("proposal")
         ):
@@ -755,6 +770,7 @@ class SoulService:
             },
             "send_enabled": self.settings.send_enabled,
             "persona": self.persona.current().model_dump(mode="json"),
+            "cognition": self.cognition.status(),
             "memory": self.memory_status(),
             "reflections": self.store.all("reflection"),
             "errors": self.store.all("job_error")[-20:],

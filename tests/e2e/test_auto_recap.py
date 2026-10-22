@@ -1,12 +1,9 @@
 import asyncio
 
-import pytest
-
 from mysoul.config import Settings
 from mysoul.domain import Event, Scope, StepDecision
 from mysoul.model import ReplayModel
 from mysoul.service import SoulService
-from mysoul.storage import Conflict
 
 
 async def test_owner_evidence_is_consolidated_during_explicit_reflection(tmp_path):
@@ -19,7 +16,7 @@ async def test_owner_evidence_is_consolidated_during_explicit_reflection(tmp_pat
         assert recap.author == "agent"
         assert recap.refs
         assert soul.store.evidence(recap.refs[0]).text.startswith("PRIVATE_CANARY")
-        assert soul.store.load_subject().model_calls == before + 2  # choose + synthesis
+        assert soul.store.load_subject().model_calls == before + 1  # synthesis only
         assert not soul.store.all("proposal")
         calls = soul.model.calls
         for _ in range(20):
@@ -41,8 +38,9 @@ async def test_failed_synthesis_retains_raw_segments_without_retry_storm(tmp_pat
     settings = Settings(data_dir=tmp_path)
     async with SoulService(settings, model=Broken()) as soul:
         await soul.owner_message("retain this raw segment")
-        with pytest.raises(ValueError, match="synthesis failed"):
-            await soul.tick()
+        await soul.tick()
+        assert soul.cognition.status()["runs"][-1]["status"] == "failed"
+        assert "synthesis failed" in soul.cognition.status()["runs"][-1]["error"]
         assert soul.recap.current().version == 0
         assert soul.store.all("recap_segment")[0]["status"] == "pending"
         ref = soul.store.all("recap_segment")[0]["id"]
@@ -70,8 +68,8 @@ async def test_clear_during_synthesis_cannot_restore_old_context(tmp_path):
         await asyncio.wait_for(entered.wait(), 2)
         soul.recap.clear(0)
         release.set()
-        with pytest.raises(Conflict):
-            await task
+        await task
+        assert soul.cognition.status()["runs"][-1]["status"] == "superseded"
         for _ in range(5):
             await soul.tick()
         assert soul.recap.current().text == ""

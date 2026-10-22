@@ -54,7 +54,7 @@ async def test_idle_creates_one_persisted_main_chat_initiative(tmp_path, call_li
         ]
 
         await soul.activities.idle()
-        assert model.calls == 1
+        assert len(model.contexts) == 1  # maintenance is separate from initiative
 
     async with SoulService(
         Settings(data_dir=tmp_path, model_call_limit=call_limit), model=InitiativeModel(),
@@ -237,23 +237,23 @@ async def test_three_minute_heartbeat_repeats_through_ticks_and_restart(tmp_path
         state.next_initiative_at = instant
         soul.store.save_transition(state.dispatch_epoch, state)
         await soul.tick()
-        assert model.calls == 1
+        assert len(model.contexts) == 1
         assert soul.store.load_subject().next_initiative_at == instant + timedelta(minutes=3)
         instant += timedelta(seconds=179)
         await soul.tick()
-        assert model.calls == 1
+        assert len(model.contexts) == 1
         instant += timedelta(seconds=1)
         await soul.tick()
-        assert model.calls == 2
+        assert len(model.contexts) == 2
 
     restarted_model = InitiativeModel()
     async with SoulService(Settings(data_dir=tmp_path), model=restarted_model) as soul:
         soul.life.clock = lambda: instant
         await soul.tick()
-        assert restarted_model.calls == 0
+        assert len(restarted_model.contexts) == 0
         instant += timedelta(minutes=3)
         await soul.tick()
-        assert restarted_model.calls == 1
+        assert len(restarted_model.contexts) == 1
         messages = [i for i in soul.status()["interactions"] if i["choice"] == "initiative"]
         assert len(messages) == 3
 
@@ -274,7 +274,7 @@ async def test_previously_considered_maintenance_does_not_starve_due_heartbeat(t
         assert model.calls == 1
         assert soul.recap.pending()
         await soul.tick()  # Unchanged maintenance must not consume every later idle tick.
-        assert model.calls == 2
+        assert len(model.contexts) == 1
         assert soul.store.load_subject().autonomy_last_result == "message"
         await soul.tick()
-        assert model.calls == 2
+        assert len(model.contexts) == 1
