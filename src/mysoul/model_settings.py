@@ -22,6 +22,8 @@ class ModelUpdate(Contract):
     api_key: SecretStr = Field(default=SecretStr(""), max_length=8192)
     output_token_limit: int | None = Field(default=None, ge=1)
     token_budget: int | None = Field(default=None, ge=0)
+    context_chars: int | None = Field(default=None, ge=4096, le=2097152)
+    request_timeout: float | None = Field(default=None, gt=0, le=600)
 
     @field_validator("url")
     @classmethod
@@ -73,6 +75,8 @@ class ModelConfiguration(Contract):
     source: Literal["runtime", "environment", "local"] = "runtime"
     output_token_limit: int | None = Field(default=None, ge=1)
     token_budget: int | None = Field(default=None, ge=0)
+    context_chars: int = Field(default=131072, ge=4096, le=2097152)
+    request_timeout: float = Field(default=120, gt=0, le=600)
 
     def public(self):
         return {
@@ -84,6 +88,8 @@ class ModelConfiguration(Contract):
             "source": self.source,
             "output_token_limit": self.output_token_limit,
             "token_budget": self.token_budget,
+            "context_chars": self.context_chars,
+            "request_timeout": self.request_timeout,
         }
 
     def create_model(self):
@@ -149,6 +155,10 @@ class ModelSettings:
                     configuration.token_budget = settings.token_budget
                 if "output_token_limit" not in configuration.model_fields_set:
                     configuration.output_token_limit = settings.model_output_limit
+                if "context_chars" not in configuration.model_fields_set:
+                    configuration.context_chars = settings.context_chars
+                if "request_timeout" not in configuration.model_fields_set:
+                    configuration.request_timeout = settings.request_timeout
                 return configuration
             except ValueError:
                 raise ValueError("Saved model settings cannot be read") from None
@@ -161,6 +171,8 @@ class ModelSettings:
                 api_key=os.environ.get("MYSOUL_API_KEY", ""),
                 output_token_limit=settings.model_output_limit,
                 token_budget=settings.token_budget,
+                context_chars=settings.context_chars,
+                request_timeout=settings.request_timeout,
             )
             return self.resolve(validated, ModelConfiguration()).model_copy(
                 update={"version": 0, "source": "environment"}
@@ -169,6 +181,8 @@ class ModelSettings:
             mode=settings.model_mode,
             output_token_limit=settings.model_output_limit,
             token_budget=settings.token_budget,
+            context_chars=settings.context_chars,
+            request_timeout=settings.request_timeout,
         )
 
     def resolve(self, update, current):
@@ -200,6 +214,17 @@ class ModelSettings:
                 update.token_budget
                 if "token_budget" in update.model_fields_set
                 else current.token_budget
+            ),
+            context_chars=(
+                update.context_chars
+                if "context_chars" in update.model_fields_set and update.context_chars is not None
+                else current.context_chars
+            ),
+            request_timeout=(
+                update.request_timeout
+                if "request_timeout" in update.model_fields_set
+                and update.request_timeout is not None
+                else current.request_timeout
             ),
         )
 

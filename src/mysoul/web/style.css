@@ -878,6 +878,24 @@ progress::-moz-progress-bar {
   font-size:12px;
   font-weight:500
 }
+.chat-failure {
+  max-width:760px;
+  border-left:3px solid var(--error);
+  border-radius:8px;
+  background:var(--error-bg);
+  color:var(--text);
+  padding:13px 16px;
+  margin:10px 0;
+  overflow-wrap:anywhere
+}
+.chat-failure strong {
+  color:var(--error);
+  font-size:12px
+}
+.chat-failure p {
+  font-size:13px;
+  margin-top:4px
+}
 .hash-label {
   font:11px Consolas,monospace;
   color:var(--muted)

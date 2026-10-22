@@ -167,13 +167,15 @@ class Executor:
                         )
                     limits = ModelLimits(
                         max_tokens=output_limit,
-                        timeout=min(30, goal.time_limit - goal.elapsed_seconds),
+                        timeout=min(
+                            self.settings.request_timeout, goal.time_limit - goal.elapsed_seconds
+                        ),
                     )
                     context = ContextBundle.model_validate(
                         self.store.get("activity_context", activity.id)
                     )
                     refresh_recap_context(self.store, context)
-                    if len(context.payload()) > 16000:
+                    if len(context.payload()) > self.settings.context_chars:
                         raise ContextOverflow("Refreshed required context exceeds budget")
                     self.store.put("activity_context", activity.id, context.model_dump(mode="json"))
                     reserve, attempts = reservation(
@@ -241,7 +243,7 @@ class Executor:
                     self.store.add_evidence(evidence)
                     latest.context_refs.append(evidence.id)
                     context.step_results.append(evidence)
-                    if len(context.payload()) > 16000:
+                    if len(context.payload()) > self.settings.context_chars:
                         self.store.save_activity(latest)
                         return self._finish(latest, "suspended")
                     self.store.put("activity_context", activity.id, context.model_dump(mode="json"))

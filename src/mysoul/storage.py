@@ -133,6 +133,26 @@ class StateStore:
             ).fetchone()
             return json.loads(row[0]) if row else None
 
+    def record_interaction(self, event, result, reply=None, *, enqueue=True):
+        with self.transaction() as db:
+            db.execute(
+                "INSERT INTO objects VALUES('interaction',?,?) "
+                "ON CONFLICT(kind,id) DO UPDATE SET body=excluded.body",
+                (event.id, json.dumps(result, ensure_ascii=False)),
+            )
+            if reply is not None:
+                db.execute(
+                    "INSERT OR IGNORE INTO evidence VALUES(?,?)",
+                    (reply.id, reply.model_dump_json()),
+                )
+                db.execute("INSERT OR IGNORE INTO memory_queue(id) VALUES(?)", (reply.id,))
+                if enqueue:
+                    db.execute(
+                        "INSERT OR IGNORE INTO objects VALUES('recap_segment',?,?)",
+                        (reply.id, json.dumps({"id": reply.id, "status": "pending"})),
+                    )
+            db.execute("UPDATE inbox SET status='processed' WHERE dedup=?", (event.dedup_key,))
+
     def put(self, kind: str, ident: str, value):
         with self.transaction() as db:
             db.execute(

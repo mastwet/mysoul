@@ -20,13 +20,15 @@ class Settings(Contract):
     model_call_limit: int = Field(default=100, ge=0)
     token_budget: int | None = Field(default=50000, ge=0)
     model_output_limit: int | None = Field(default=None, ge=1)
+    context_chars: int = Field(default=131072, ge=4096, le=2097152)
+    request_timeout: float = Field(default=120, gt=0, le=600)
     fatigue_enabled: bool = True
     fatigue_per_hour: float = Field(default=0.2, ge=0, le=1)
     recovery_per_hour: float = Field(default=0.4, ge=0, le=1)
     event_capacity: int = Field(default=256, ge=1, le=10000)
     model_mode: Literal["replay", "procedure-replay", "provider"] = "replay"
     load_saved_model: bool = True
-    memory_backend: Literal["fixture", "mempalace"] = "fixture"
+    memory_backend: Literal["local", "fixture", "mempalace"] = "local"
     mempalace_config: Path | None = None
     news_sources: set[str] = Field(default_factory=set)
 

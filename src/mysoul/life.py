@@ -6,6 +6,8 @@ from mysoul.domain import (
     ActivityDecision,
     ContextBundle,
     Event,
+    FailedDecision,
+    ModelFailure,
     ModelLimits,
     Scope,
     now,
@@ -46,7 +48,9 @@ class LifeController:
         advance_fatigue(state, self.settings, self.clock())
         owner = any(e.trust == "owner_command" for e in events)
         expired = state.rest_until is not None and self.clock() >= state.rest_until
-        limits = ModelLimits(max_tokens=self.settings.model_output_limit)
+        limits = ModelLimits(
+            max_tokens=self.settings.model_output_limit, timeout=self.settings.request_timeout
+        )
         if context is None:
             scope = events[0].scope if events else Scope()
             context = ContextBundle(
@@ -72,7 +76,7 @@ class LifeController:
         from mysoul.laputa import ContextOverflow, refresh_recap_context
 
         refresh_recap_context(self.store, context)
-        if len(context.payload()) > 16000:
+        if len(context.payload()) > self.settings.context_chars:
             raise ContextOverflow("Required context exceeds admission budget")
         context.instructions += (
             "\nPrefer bounded goals over incidental chat."
@@ -91,8 +95,29 @@ class LifeController:
         self.store.save_transition(state.dispatch_epoch, state)
         try:
             decision = await asyncio.wait_for(self.model.decide(context, limits), limits.timeout)
-        except (ValueError, TimeoutError):
-            decision = ActivityDecision(activity=Activity.REST, rationale="Model unavailable")
+        except TimeoutError:
+            message = "模型请求超时，可以调高请求超时后重试。"
+            decision = FailedDecision(
+                activity=Activity.REST,
+                rationale=message,
+                failure=ModelFailure(code="timeout", message=message),
+            )
+        except ValueError as exc:
+            from mysoul.provider import ProviderError
+
+            if isinstance(exc, ProviderError):
+                code, message = exc.code, str(exc)
+            else:
+                code, message = "invalid_response", "模型返回了无法识别的结果。"
+            decision = FailedDecision(
+                activity=Activity.REST,
+                rationale=message,
+                failure=ModelFailure(code=code, message=message),
+            )
+        if owner and decision.chat_action == "reply" and decision.reply:
+            # A complete chat response is already the work for this turn. Do not
+            # also launch a second, model-selected background task from the same text.
+            decision = decision.model_copy(update={"activity": Activity.CHAT})
         latest = self.store.load_subject()
         if latest.dispatch_epoch != state.dispatch_epoch:
             return ActivityDecision(activity=Activity.REST, rationale="Superseded by owner input")

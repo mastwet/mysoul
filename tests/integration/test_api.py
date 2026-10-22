@@ -83,15 +83,48 @@ def test_cancelling_completed_work_and_redacted_errors(client):
 
 
 def test_persona_and_mode_are_persisted(client):
-    assert client.post("/api/persona", json={"public": "A careful companion."}).status_code == 200
+    assert (
+        client.post(
+            "/api/persona", json={"expected_version": 0, "public": "A careful companion."}
+        ).status_code
+        == 200
+    )
     assert client.post("/api/life", json={"mode": "quiet", "fatigue": 0.5}).status_code == 200
     body = client.get("/api/status").json()
     assert body["state"]["mode"] == "quiet" and body["state"]["fatigue"] == 0.5
     assert body["persona"]["public"] == "A careful companion."
+    assert client.get("/api/persona/history").json()[0]["public"] == "A careful companion."
+
+
+def test_persona_version_conflict_and_memory_search(client):
+    body = client.get("/api/status").json()
+    sections = body["persona"]["sections"]
+    sections["identity"] = "Updated private identity"
+    update = client.post(
+        "/api/persona",
+        json={
+            "expected_version": body["persona"]["version"],
+            "public": body["persona"]["public"],
+            "sections": sections,
+        },
+    )
+    assert update.status_code == 200
+    stale = client.post(
+        "/api/persona", json={"expected_version": body["persona"]["version"], "public": "stale"}
+    )
+    assert stale.status_code == 409
+    client.post("/api/chat", json={"text": "蓝鲸住在海洋"})
+    hits = client.get("/api/memory/search", params={"q": "蓝鲸"}).json()
+    assert any("蓝鲸" in item["text"] for item in hits)
 
 
 def test_operator_status_exposes_budget_limits_without_credentials(client):
     body = client.get("/api/status").json()
-    assert body["limits"] == {"model_calls": 100, "tokens": 50000}
+    assert body["limits"] == {
+        "model_calls": 100,
+        "tokens": 50000,
+        "context_chars": 131072,
+        "request_timeout": 120.0,
+    }
     assert "operator_token" not in body
     assert "api_key" not in body

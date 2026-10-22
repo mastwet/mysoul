@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Literal
 
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import Field
@@ -16,6 +16,7 @@ from mysoul.config import Settings
 from mysoul.domain import Contract, Goal
 from mysoul.evolution import RegressionCase
 from mysoul.model_settings import ModelUpdate
+from mysoul.persona import PersonaSections
 from mysoul.service import SoulService
 from mysoul.storage import Conflict
 
@@ -61,7 +62,13 @@ class ResumeInput(Contract):
 
 
 class PersonaInput(Contract):
-    public: str = Field(min_length=1, max_length=2000)
+    expected_version: int = Field(ge=0)
+    public: str | None = Field(default=None, min_length=1, max_length=8000)
+    sections: PersonaSections | None = None
+
+    @property
+    def has_changes(self):
+        return self.public is not None or self.sections is not None
 
 
 class LifeInput(Contract):
@@ -231,10 +238,27 @@ def create_app(settings: Settings | None = None, *, token=None, service=None):
 
         return [json.loads(r[0]) for r in rows]
 
+    @app.get("/api/memory/search", dependencies=guard)
+    async def memory_search(
+        q: str = Query(min_length=1, max_length=1000), limit: int = Query(default=10, ge=1, le=50)
+    ):
+        from mysoul.domain import Scope
+
+        return await app.state.soul.memory.search(q, Scope(), limit)
+
     @app.post("/api/persona", dependencies=guard)
     async def persona(body: PersonaInput):
-        app.state.soul.store.put("config", "persona", body.model_dump())
-        return body
+        if not body.has_changes:
+            raise ValueError("人格内容不能为空")
+        return app.state.soul.persona.update(
+            body.expected_version,
+            sections=body.sections,
+            public=body.public,
+        )
+
+    @app.get("/api/persona/history", dependencies=guard)
+    async def persona_history():
+        return app.state.soul.persona.history()
 
     @app.post("/api/life", dependencies=guard)
     async def life(body: LifeInput):
@@ -280,8 +304,12 @@ def create_app(settings: Settings | None = None, *, token=None, service=None):
     async def resume(activity_id: str, body: ResumeInput):
         soul = app.state.soul
         activity = soul.store.activity(activity_id)
-        if (jobs or soul.admission.busy or activity.status != "suspended"
-                or soul.store.goal(activity.goal_id).cancelled):
+        if (
+            jobs
+            or soul.admission.busy
+            or activity.status != "suspended"
+            or soul.store.goal(activity.goal_id).cancelled
+        ):
             raise Conflict("Activity cannot resume")
         launch(soul.executor.resume(activity_id, body.decision))
         return {"status": "queued"}

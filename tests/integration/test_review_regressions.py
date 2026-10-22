@@ -63,17 +63,15 @@ async def test_event_reply_crash_never_creates_second_remote_operation(tmp_path,
     settings, phone = phone_rig(tmp_path, calls, unknown)
     event = group_event()
     async with SoulService(settings, model=ReplyModel(), phone=phone) as soul:
-        original = soul.store.put
+        original = soul.store.record_interaction
 
-        def crash(kind, *args):
-            if kind == "interaction":
-                raise Cut()
-            return original(kind, *args)
+        def crash(*args, **kwargs):
+            raise Cut()
 
-        soul.store.put = crash
+        soul.store.record_interaction = crash
         with pytest.raises(Cut):
             await soul.receive(event)
-        soul.store.put = original
+        soul.store.record_interaction = original
     settings, phone = phone_rig(tmp_path, calls, unknown)
     async with SoulService(settings, model=ReplyModel(), phone=phone) as soul:
         recovered = await soul.receive(event)

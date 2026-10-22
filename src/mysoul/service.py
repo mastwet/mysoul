@@ -5,6 +5,7 @@ from mysoul.config import Settings
 from mysoul.domain import (
     Activity,
     ContextBudget,
+    ConversationMessage,
     Event,
     Evidence,
     Goal,
@@ -18,9 +19,10 @@ from mysoul.executor import Executor
 from mysoul.laputa import ContextAssembler, ContextOverflow, RecapStore
 from mysoul.lease import SubjectLease
 from mysoul.life import LifeController
-from mysoul.memory import FixtureMemory
+from mysoul.memory import FixtureMemory, LocalMemory
 from mysoul.model import ReplayModel, budget_exceeded, reservation
 from mysoul.model_settings import ModelConfiguration, ModelSettings
+from mysoul.persona import PersonaStore
 from mysoul.phone.replay import ReplayPhone
 from mysoul.scheduler import Scheduler
 from mysoul.skills import SkillStore
@@ -35,15 +37,23 @@ class SoulService:
         self.store = StateStore(settings.data_dir / "state.sqlite")
         self.store.load_subject()
         self.model_settings = ModelSettings(settings.data_dir)
-        self.model_configuration = (self.model_settings.load(settings) if model is None
-                                    else ModelConfiguration(
-                                        mode=settings.model_mode,
-                                        output_token_limit=settings.model_output_limit,
-                                        token_budget=settings.token_budget))
+        self.model_configuration = (
+            self.model_settings.load(settings)
+            if model is None
+            else ModelConfiguration(
+                mode=settings.model_mode,
+                output_token_limit=settings.model_output_limit,
+                token_budget=settings.token_budget,
+                context_chars=settings.context_chars,
+                request_timeout=settings.request_timeout,
+            )
+        )
         self.model = model if model is not None else self.model_configuration.create_model()
         settings.model_mode = self.model_configuration.mode
         settings.model_output_limit = self.model_configuration.output_token_limit
         settings.token_budget = self.model_configuration.token_budget
+        settings.context_chars = self.model_configuration.context_chars
+        settings.request_timeout = self.model_configuration.request_timeout
         if phone is None and settings.backend == "napcat":
             import os
 
@@ -55,7 +65,12 @@ class SoulService:
         self.phone = phone or ReplayPhone()
         if bool(self.phone.capabilities["live"]) != (settings.backend == "napcat"):
             raise ValueError("Phone backend differs from trusted runtime configuration")
-        self.memory = FixtureMemory(self.store)
+        self.memory = (
+            LocalMemory(self.store)
+            if settings.memory_backend == "local"
+            else FixtureMemory(self.store)
+        )
+        self.persona = PersonaStore(self.store)
         self.recap = RecapStore(self.store)
         self.skills = SkillStore(self.store, settings.data_dir / "skill-revisions")
         self.skills.initialize()
@@ -112,6 +127,8 @@ class SoulService:
     async def __aenter__(self):
         try:
             self.lease.acquire()
+            self.persona.initialize()
+            self._backfill_dialogue()
             if self.settings.memory_backend == "mempalace":
                 from mysoul.mempalace import MemPalaceProcess
 
@@ -239,10 +256,74 @@ class SoulService:
                 pass
 
     async def context(self, scope, task=""):
-        persona = self.store.get("config", "persona") or {"public": "A helpful companion."}
-        return await ContextAssembler(
-            self.recap, self.memory, task=task, public_persona=persona["public"]
-        ).build(scope, ContextBudget())
+        bundle = await ContextAssembler(
+            self.recap,
+            self.memory,
+            task=task,
+            persona_instructions=self.persona.current().instructions(scope),
+            history=self.dialogue_history(scope),
+        ).build(scope, ContextBudget(max_chars=self.settings.context_chars))
+        self.context_metrics = {
+            "payload_chars": len(bundle.payload()),
+            "budget_chars": self.settings.context_chars,
+            "history_messages": len(bundle.history),
+            "memory_results": len(bundle.evidence),
+            "recap_version": bundle.recap_version,
+            "recall_status": bundle.recall_status,
+        }
+        return bundle
+
+    def dialogue_history(self, scope):
+        import json
+
+        with self.store.lock:
+            rows = self.store.db.execute(
+                "SELECT i.body,e.body FROM objects i JOIN events e ON e.id=i.id "
+                "WHERE i.kind='interaction' AND json_extract(e.body,'$.scope.audience')=? "
+                "AND json_extract(e.body,'$.scope.conversation')=? "
+                "ORDER BY json_extract(e.body,'$.received_at') DESC LIMIT 20",
+                (scope.audience, scope.conversation),
+            ).fetchall()
+        turns = []
+        for result_json, event_json in reversed(rows):
+            result, event = json.loads(result_json), Event.model_validate_json(event_json)
+            turn = [ConversationMessage(role="user", content=event.content, event_id=event.id)]
+            if self._assistant_evidence(event, result):
+                turn.append(
+                    ConversationMessage(role="assistant", content=result["text"], event_id=event.id)
+                )
+            turns.append(turn)
+        return turns
+
+    def _assistant_evidence(self, event, result):
+        text = result.get("text", "")
+        if (
+            result.get("error")
+            or not text
+            or text.startswith("Replay:")
+            or text in {"Model unavailable", "Rest or runtime limit", "Context budget exhausted"}
+            or result.get("choice") not in {"owner_served", "sent", "draft"}
+        ):
+            return None
+        return Evidence(
+            id="reply:" + event.id,
+            text=text,
+            scope=event.scope,
+            source="assistant-reply",
+            source_scopes=[event.scope],
+        )
+
+    def _backfill_dialogue(self):
+        events = {event.id: event for event in self.store.events()}
+        for result in self.store.all("interaction"):
+            event = events.get(result.get("event_id"))
+            if event and (reply := self._assistant_evidence(event, result)):
+                with self.store.lock:
+                    present = self.store.db.execute(
+                        "SELECT 1 FROM evidence WHERE id=?", (reply.id,)
+                    ).fetchone()
+                if not present:
+                    self.store.record_interaction(event, result, reply, enqueue=False)
 
     async def _draft(self, request):
         text = request.arguments.get("text", "")
@@ -334,8 +415,7 @@ class SoulService:
             self.owner_turns -= 1
 
     def _record_interaction(self, event, result):
-        self.store.put("interaction", event.id, result)
-        self.store.processed_event(event)
+        self.store.record_interaction(event, result, self._assistant_evidence(event, result))
         return result
 
     def _reply_outcome(self, intent):
@@ -366,7 +446,24 @@ class SoulService:
         if admission_epoch is None:
             admission_epoch = self.store.load_subject().dispatch_epoch
         if decision is None:
-            context = await self.context(event.scope, event.content)
+            try:
+                context = await self.context(event.scope, event.content)
+            except ContextOverflow:
+                message = "当前对话上下文超过本机设置的字符预算，请提高上下文预算或缩短输入后重试。"
+                result = {
+                    "choice": "owner_served" if event.trust == "owner_command" else "silent",
+                    "event_id": event.id,
+                    "activity": "rest",
+                    "text": message,
+                    "input": event.content,
+                    "error": {"code": "context_budget", "message": message},
+                }
+                self.store.add_evidence(
+                    Evidence(
+                        id=event.id, text=event.content, scope=event.scope, source=event.source
+                    )
+                )
+                return self._record_interaction(event, result)
             if self.store.load_subject().dispatch_epoch != admission_epoch:
                 return self._record_interaction(
                     event,
@@ -397,6 +494,7 @@ class SoulService:
                 if isinstance(self.model, ReplayModel)
                 else decision.reply or decision.rationale
             )
+        failure = getattr(decision, "failure", None)
         if (
             choice == "draft"
             and self.phone.capabilities["live"]
@@ -437,6 +535,8 @@ class SoulService:
             "text": text,
             "input": event.content,
         }
+        if failure:
+            result["error"] = failure.model_dump(mode="json")
         if choice == "draft":
             self.store.put(
                 "draft",
@@ -484,16 +584,19 @@ class SoulService:
             "\n[reflection] Evolve procedures only; no authority or runtime edits."
         )
         context.evidence = evidence
-        if len(context.payload()) > 16000:
+        if len(context.payload()) > self.settings.context_chars:
             raise ValueError("Reflection evidence exceeds context budget")
-        limits = ModelLimits(max_tokens=self.settings.model_output_limit, retries=0)
+        limits = ModelLimits(
+            max_tokens=self.settings.model_output_limit,
+            timeout=self.settings.request_timeout,
+            retries=0,
+        )
         reserve, attempts = reservation(self.model, context, limits, [])
         state = self.store.load_subject()
         if state.dispatch_epoch != epoch:
             raise Conflict("Reflection superseded during context preparation")
-        if (
-            state.model_calls + attempts > self.settings.model_call_limit
-            or budget_exceeded(state.tokens_used, reserve, self.settings.token_budget)
+        if state.model_calls + attempts > self.settings.model_call_limit or budget_exceeded(
+            state.tokens_used, reserve, self.settings.token_budget
         ):
             raise Conflict("Reflection budget exhausted")
         state.activity = Activity.REFLECT
@@ -518,13 +621,21 @@ class SoulService:
         from mysoul.laputa import consolidate_recap
 
         await consolidate_recap(self, epoch)
-        if refs and not any(p["status"] in {"proposed", "tested", "approved"}
-                            for p in self.store.all("proposal")):
+        if refs and not any(
+            p["status"] in {"proposed", "tested", "approved"} for p in self.store.all("proposal")
+        ):
             proposal = await self.reflect(refs, expected_epoch=epoch)
             for ref in refs:
-                self.store.put("task_feedback", ref, {
-                    "id": ref, "status": "proposed", "learn": True, "proposal_id": proposal.id,
-                })
+                self.store.put(
+                    "task_feedback",
+                    ref,
+                    {
+                        "id": ref,
+                        "status": "proposed",
+                        "learn": True,
+                        "proposal_id": proposal.id,
+                    },
+                )
 
     @admitted("reflection")
     async def test_candidate(self, proposal_id, cases=None):
@@ -561,6 +672,8 @@ class SoulService:
         self.settings.model_mode = configuration.mode
         self.settings.model_output_limit = configuration.output_token_limit
         self.settings.token_budget = configuration.token_budget
+        self.settings.context_chars = configuration.context_chars
+        self.settings.request_timeout = configuration.request_timeout
         close = getattr(old, "close", None)
         if close:
             await close()
@@ -580,21 +693,26 @@ class SoulService:
         try:
             # Deliberately bypass ContextAssembler: probes send no private application data.
             context = ContextBundle(task="Connection test. Choose rest.")
-            limits = ModelLimits(max_tokens=configuration.output_token_limit, timeout=30, retries=0)
+            limits = ModelLimits(
+                max_tokens=configuration.output_token_limit,
+                timeout=configuration.request_timeout,
+                retries=0,
+            )
             reserve, attempts = reservation(model, context, limits)
             state = self.store.load_subject()
-            if (state.model_calls + attempts > self.settings.model_call_limit
-                    or budget_exceeded(state.tokens_used, reserve, self.settings.token_budget)):
+            if state.model_calls + attempts > self.settings.model_call_limit or budget_exceeded(
+                state.tokens_used, reserve, self.settings.token_budget
+            ):
                 raise Conflict("Model probe budget exhausted")
             state.model_calls += attempts
             state.tokens_used += reserve
             self.store.save_transition(state.dispatch_epoch, state)
             try:
                 await asyncio.wait_for(model.decide(context, limits), limits.timeout)
-            except (ValueError, TimeoutError):
-                raise ValueError(
-                    "Model connection failed; check endpoint, model and API key"
-                ) from None
+            except TimeoutError:
+                raise ValueError("模型连接测试超时。可以调高请求超时后重试。") from None
+            except ValueError as exc:
+                raise ValueError(str(exc)) from None
             return {"ok": True, "detail": "Structured response received; settings not saved"}
         finally:
             await model.close()
@@ -627,10 +745,32 @@ class SoulService:
             "limits": {
                 "model_calls": self.settings.model_call_limit,
                 "tokens": self.settings.token_budget,
+                "context_chars": self.settings.context_chars,
+                "request_timeout": self.settings.request_timeout,
             },
             "send_enabled": self.settings.send_enabled,
-            "persona": self.store.get("config", "persona") or {"public": "A helpful companion."},
+            "persona": self.persona.current().model_dump(mode="json"),
+            "memory": self.memory_status(),
             "reflections": self.store.all("reflection"),
             "errors": self.store.all("job_error")[-20:],
             "effects": effects,
+        }
+
+    def memory_status(self):
+        with self.store.lock:
+            evidence_count = self.store.db.execute("SELECT COUNT(*) FROM evidence").fetchone()[0]
+            pending = self.store.db.execute(
+                "SELECT COUNT(*) FROM memory_queue WHERE status='pending'"
+            ).fetchone()[0]
+        return {
+            "backend": self.settings.memory_backend,
+            "method": "local lexical"
+            if self.settings.memory_backend == "local"
+            else self.settings.memory_backend,
+            "evidence_count": evidence_count,
+            "pending_mempalace_sync": pending,
+            "mempalace": "connected"
+            if self.settings.memory_backend == "mempalace"
+            else "not configured",
+            "last_context": getattr(self, "context_metrics", None),
         }

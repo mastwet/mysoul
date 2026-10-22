@@ -102,6 +102,21 @@ def test_save_activate_restart_and_secret_redaction(tmp_path, provider):
     assert not provider  # saving does not make paid calls
 
 
+def test_context_capacity_and_request_timeout_persist_across_restart(tmp_path, provider):
+    with connect(Settings(data_dir=tmp_path)) as client:
+        result = client.post(
+            "/api/model", json=values(context_chars=262144, request_timeout=180)
+        )
+        assert result.status_code == 200
+        assert result.json()["context_chars"] == 262144
+        assert result.json()["request_timeout"] == 180
+    with connect(Settings(data_dir=tmp_path)) as client:
+        model = client.get("/api/model").json()
+        assert model["context_chars"] == 262144
+        assert model["request_timeout"] == 180
+    assert not provider
+
+
 def test_probe_is_private_bounded_budgeted_and_does_not_activate(tmp_path, provider):
     with connect(Settings(data_dir=tmp_path)) as client:
         client.post("/api/recap", json={"expected_version": 0, "text": "PRIVATE_RECAP", "refs": []})

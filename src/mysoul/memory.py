@@ -1,5 +1,7 @@
 """Source-scoped memory, with an outbox independent of graph checkpoints."""
 
+import json
+import re
 from typing import Protocol
 
 from mysoul.domain import Evidence, Scope
@@ -45,6 +47,58 @@ class FixtureMemory:
         if not evidence.permitted(scope):
             raise PermissionError("Evidence outside admitted scope")
         return evidence
+
+
+class LocalMemory(FixtureMemory):
+    """Durable local lexical recall, explicitly distinct from semantic MemPalace."""
+
+    async def search(self, query: str, scope: Scope, limit: int) -> list[Evidence]:
+        self.check()
+        limit = max(0, min(limit, 100))
+        if not limit:
+            return []
+        words = re.findall(r"[a-zA-Z0-9_]{2,}|[\u3400-\u9fff]+", query.casefold())
+        terms = list(
+            dict.fromkeys(
+                part
+                for word in words
+                for part in (
+                    [word]
+                    if not re.search(r"[\u3400-\u9fff]", word)
+                    else [word] + [word[i : i + 2] for i in range(len(word) - 1)]
+                )
+            )
+        )[:40]
+        permitted = "(json_extract(body,'$.scope.audience')='public' OR "
+        permitted += "(json_extract(body,'$.scope.audience')=? AND "
+        permitted += "json_extract(body,'$.scope.conversation')=?))"
+        arguments = [scope.audience, scope.conversation]
+        where = permitted
+        if terms:
+            where += (
+                " AND ("
+                + " OR ".join("json_extract(body,'$.text') LIKE ? ESCAPE '!'" for _ in terms)
+                + ")"
+            )
+            arguments.extend(
+                "%" + term.replace("!", "!!").replace("%", "!%").replace("_", "!_") + "%"
+                for term in terms
+            )
+        with self.store.lock:
+            rows = self.store.db.execute(
+                "SELECT body FROM evidence WHERE " + where + " ORDER BY rowid DESC LIMIT 1000",
+                arguments,
+            ).fetchall()
+        hits = [Evidence.model_validate(json.loads(row[0])) for row in rows]
+        hits = [hit for hit in hits if hit.permitted(scope)]
+        if terms:
+            hits.sort(
+                key=lambda hit: sum(
+                    len(term) ** 2 for term in terms if term in hit.text.casefold()
+                ),
+                reverse=True,
+            )
+        return hits[:limit]
 
 
 async def flush_memory_queue(store, memory: Memory, limit=20):

@@ -8,6 +8,16 @@ const renderMarkdown=createMessageRenderer(globalThis.markdownit);
 const $ = (id) => document.getElementById(id);
 const activityNames = {work:"工作", read_chat:"阅读聊天", read_news:"阅读新闻", rest:"休息", reflection:"反思"};
 const modeNames = {normal:"日常", quiet:"安静", focused:"专注"};
+const failureNames = {
+  timeout:"请求超时", context_limit:"上下文超过模型服务容量", context_budget:"超出本机上下文预算",
+  authentication:"密钥或账号权限有误", rate_limit:"模型服务限流", model_unavailable:"模型或接口不可用",
+  connection:"无法连接模型服务", invalid_response:"模型返回格式无法识别", response_limit:"模型响应超过安全上限",
+  provider_error:"模型服务返回错误",
+};
+const personaNames = {
+  identity:"身份与表达", relationship:"与主人关系", redline:"边界与原则", user:"主人资料",
+  world:"认识世界的方式", dream:"愿望与成长方向", dark:"私密内在", mission:"持续使命",
+};
 const statusNames = {pending:"等待中", active:"进行中", suspended:"已暂停", completed:"已完成", failed:"失败", cancelled:"已取消", abandoned:"已放弃", confirmed:"已确认", unknown:"结果未知", not_sent:"未发送", in_flight:"进行中", draft:"草稿", proposed:"待测试", tested:"已测试", rejected:"已拒绝", active_skill:"已启用"};
 const paths = {
   chat:["M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6A8.4 8.4 0 0 1 12.5 3h.5a8.5 8.5 0 0 1 8 8v.5Z"],
@@ -52,7 +62,7 @@ const fragment=new URLSearchParams(location.hash.slice(1));
 if(fragment.has("token")){token=fragment.get("token");history.replaceState(null,"",location.pathname);}
 let csrf="", snapshot=null, skillData=null, recapBase=null, activeView="chat";
 let refreshPromise=null, pendingChat=null, chatSignature="", lifeDirty=false, loadedChat=false;
-let modelDirty=false, modelVersion=0;
+let modelDirty=false, modelVersion=0, personaEditVersion=0;
 const busyScopes=new Set(), signatures=new WeakMap();
 
 function notice(text) {
@@ -166,6 +176,7 @@ function selectSetting(name) {
   document.querySelectorAll("[data-setting]").forEach(el=>{const active=el.dataset.setting===name;el.classList.toggle("active",active);if(active)el.setAttribute("aria-current","page");else el.removeAttribute("aria-current");});
   document.querySelectorAll(".setting-page").forEach(el=>el.hidden=el.id!==`setting-${name}`);
   $("settings-content").scrollTop=0;
+  if(name==="persona")loadPersonaHistory();
 }
 function openSettings(section="general") {
   settingsOpener=document.activeElement;
@@ -205,8 +216,8 @@ async function refresh() {
       $("connection").textContent="已连接 · 本机";document.querySelector(".connection-dot").classList.remove("offline");
       renderSnapshot();
       if(requestedView==="memory"){
-        const [evidence,history]=await Promise.all([api("evidence"),api("recap/history")]);
-        if(activeView===requestedView){renderEvidence(evidence);renderHistory(history);}
+        const [evidence,history,personaHistory]=await Promise.all([api("evidence"),api("recap/history"),api("persona/history")]);
+        if(activeView===requestedView){renderEvidence(evidence);renderHistory(history);renderPersonaHistory(personaHistory);renderMemoryStatus();}
       }else if(requestedView==="skills"){
         const [skills,evidence]=await Promise.all([api("skills"),api("evidence")]);
         if(activeView===requestedView){skillData=skills;renderSkills(skills);renderEvidenceOptions(evidence);}
@@ -227,6 +238,7 @@ function renderSnapshot(force=false) {
   if(!modelDirty&&!busyScopes.has($("model-form"))){
     modelVersion=model.version;$("model-mode").value=model.mode;$("model-url").value=model.url;$("model-name").value=model.model;
     $("model-output-limit").value=model.output_token_limit??"";$("model-token-budget").value=model.token_budget??"";
+    $("model-context-chars").value=model.context_chars;$("model-timeout").value=model.request_timeout;
     $("model-key").placeholder=model.key_present?"已保存密钥，留空表示保留":"填写模型服务的 API Key";
     $("model-key-note").textContent=model.key_present?"密钥已配置，不会回显。更改 API 地址时，请重新填写密钥。":"与本机操作令牌不同。密钥保存在本机，不会回显。";
     syncModelFields();
@@ -246,6 +258,7 @@ function renderSnapshot(force=false) {
   }
   if(!lifeDirty&&!busyScopes.has($("life-form"))){$("mode").value=state.mode;$("fatigue-input").value=percent;$("fatigue-range").value=percent;}
   $("persona-view").textContent=snapshot.persona.public;
+  $("persona-version").textContent=`当前版本 v${snapshot.persona.version} · 私密部分只加入主人上下文`;
   $("recap-version").textContent=`v${snapshot.recap.version}`;
   $("recap-view").textContent=snapshot.recap.text||"还没有摘要。新的经验会在整理后出现在这里。";
   const activeTasks=snapshot.goals.filter(g=>["pending","active","suspended"].includes(g.status)).length;
@@ -274,6 +287,17 @@ function renderTurn(item) {
   if(!["owner_served",undefined].includes(item.choice))meta.append(node("span",{sent:"已发送",draft:"草稿 · 未发送",unknown:"发送结果未知",silent:"阅读 · 保持沉默"}[item.choice]||""));
   reply.append(meta);
   if(item.pending){const thinking=node("div",undefined,"thinking");thinking.setAttribute("role","status");thinking.append(node("i"),node("i"),node("i"),node("span","正在回应…"));reply.append(thinking);}
+  else if(item.error){
+    const failure=node("div",undefined,"chat-failure");
+    const code=item.error.code||"provider_error";
+    failure.append(node("strong",`未能生成回复 · ${failureNames[code]||code} (${code})`),node("p",item.error.message||item.text||"模型服务暂时无法完成请求。"));
+    reply.append(failure);
+  }
+  else if(item.text==="Model unavailable"){
+    const failure=node("div",undefined,"chat-failure");
+    failure.append(node("strong","旧版请求失败 · 当时原因未记录"),node("p","这条历史记录没有保留服务端错误细节。新请求会显示超时、上下文容量、密钥或接口问题等具体原因。"));
+    reply.append(failure);
+  }
   else if(item.text){
     reply.append(messageBody(item.text));
     const actions=node("div",undefined,"message-actions"),copy=node("button",undefined,"icon-button");copy.type="button";copy.setAttribute("aria-label","复制回复");copy.append(icon("copy"));
@@ -311,6 +335,34 @@ function renderEvidence(evidence) {
 }
 function renderHistory(history) {
   keyedList($("recap-history"),history.map(v=>({...v,key:v.version})),v=>{const row=node("div",undefined,"history-row");row.append(node("strong",`v${v.version} · ${new Date(v.created_at).toLocaleString()}`),node("p",v.text.slice(0,160)||"空摘要"));return row;},"还没有历史版本。");
+}
+function renderPersonaHistory(history) {
+  keyedList($("persona-history"),history.map(v=>({...v,key:v.version})),v=>{
+    const row=node("div",undefined,"history-row");row.append(node("strong",`人格 v${v.version}`),node("p",v.public));return row;
+  },"还没有历史版本。");
+}
+async function loadPersonaHistory() {
+  try{renderPersonaHistory(await api("persona/history"));}
+  catch(error){notice(error.message);}
+}
+function renderMemoryStatus() {
+  if(!snapshot?.memory)return;
+  const memory=snapshot.memory,last=memory.last_context;
+  const names={local:"本机关键词检索",fixture:"离线回放记忆",mempalace:"MemPalace"};
+  $("memory-backend").textContent=names[memory.backend]||memory.backend;
+  const context=last?`最近一次组装 ${last.payload_chars.toLocaleString()} / ${last.budget_chars.toLocaleString()} 字符上下文，含 ${last.history_messages} 条对话消息、${last.memory_results} 条记忆证据。`:"还没有模型上下文记录。";
+  const engine=memory.backend==="local"?"本机按关键词匹配，可在这里查找旧记录；语义记忆服务尚未接入。":memory.backend==="mempalace"?"MemPalace 已配置；状态以实际检索结果为准。":"使用确定性离线记忆夹具。";
+  const queue=memory.mempalace==="not configured"
+    ?`MemPalace 未接入，${memory.pending_mempalace_sync.toLocaleString()} 条记录保存在本地队列。`
+    :`还有 ${memory.pending_mempalace_sync.toLocaleString()} 条记录待同步。`;
+  $("memory-status").textContent=`已保存 ${memory.evidence_count.toLocaleString()} 条证据。${engine} ${queue}${context}`;
+}
+function renderMemoryResults(results) {
+  keyedList($("memory-search-results"),results.map(e=>({...e,key:e.id})),e=>{
+    const row=node("div",undefined,"evidence-row");
+    row.append(node("small",`${e.scope.audience==="owner"?"主人私有":"公开来源"} · ${e.source}`),node("p",e.text));
+    return row;
+  },"没有找到匹配的记录。可尝试更具体的关键词。",true);
 }
 function renderEvidenceOptions(evidence) {
   if(busyScopes.has($("proposal-form"))||document.activeElement===$("evidence-select"))return;
@@ -357,9 +409,11 @@ bindForm("chat-form",async()=>{
   pendingChat={input:text,choice:"owner_served"};renderMessages(snapshot?.interactions||[]);scrollBottom();
   try{
     const result=await api("chat",{text});
-    pendingChat=null;input.value="";
+    pendingChat=null;
+    if(!result.error)input.value="";
     if(snapshot&&!snapshot.interactions.some(item=>item.event_id===result.event_id))snapshot.interactions.push(result);
     renderMessages(snapshot?.interactions||[]);await refresh();
+    if(result.error)notice(`${result.error.message} 已保留输入；不会自动重发。`);
   }
   finally{pendingChat=null;renderMessages(snapshot?.interactions||[]);updateComposer();}
 });
@@ -381,7 +435,7 @@ $("reset-model").addEventListener("click",()=>{modelDirty=false;$("model-key").v
 function modelInput(){
   const provider=$("model-mode").value==="provider", saved=snapshot.model;
   const optionalNumber=id=>$(id).value.trim()===""?null:Number($(id).value);
-  return {expected_version:modelVersion,mode:$("model-mode").value,url:provider?$("model-url").value:saved.url,model:provider?$("model-name").value:saved.model,api_key:provider?$("model-key").value:"",output_token_limit:provider?optionalNumber("model-output-limit"):saved.output_token_limit,token_budget:optionalNumber("model-token-budget")};
+  return {expected_version:modelVersion,mode:$("model-mode").value,url:provider?$("model-url").value:saved.url,model:provider?$("model-name").value:saved.model,api_key:provider?$("model-key").value:"",output_token_limit:provider?optionalNumber("model-output-limit"):saved.output_token_limit,token_budget:optionalNumber("model-token-budget"),context_chars:Number($("model-context-chars").value),request_timeout:Number($("model-timeout").value)};
 }
 $("test-model").addEventListener("click",()=>{
   if(!$("model-form").reportValidity())return;
@@ -396,10 +450,29 @@ function closeRecap(){$("recap-form").hidden=true;$("recap-actions").hidden=fals
 $("cancel-recap").addEventListener("click",closeRecap);
 bindForm("recap-form",async()=>{await api("recap",{expected_version:recapBase.version,text:$("recap-text").value,refs:recapBase.refs});closeRecap();});
 $("clear-recap").addEventListener("click",()=>busy($("clear-recap"),()=>api("recap/clear",{expected_version:snapshot.recap.version})));
-$("edit-persona").addEventListener("click",()=>{$("persona-text").value=snapshot.persona.public;$("persona-form").hidden=false;$("persona-view").hidden=true;$("edit-persona").hidden=true;$("persona-text").focus();});
+$("edit-persona").addEventListener("click",()=>{
+  const profile=snapshot.persona, fields=$("persona-fields");personaEditVersion=profile.version;
+  const controls=[];
+  for(const [key,label] of Object.entries(personaNames)){
+    const input=node("textarea");input.id=`persona-${key}`;input.rows=3;input.maxLength=8000;input.value=profile.sections[key]||"";
+    const title=node("label",label);title.htmlFor=input.id;controls.push(title,input);
+  }
+  const publicTitle=node("label","公开人格投影（群聊使用）");publicTitle.htmlFor="persona-public";
+  const publicInput=node("textarea");publicInput.id="persona-public";publicInput.rows=3;publicInput.maxLength=8000;publicInput.required=true;publicInput.value=profile.public;
+  controls.push(publicTitle,publicInput);fields.replaceChildren(...controls);
+  $("persona-form").hidden=false;$("persona-view").hidden=true;$("edit-persona").hidden=true;
+});
 function closePersona(){$("persona-form").hidden=true;$("persona-view").hidden=false;$("edit-persona").hidden=false;}
 $("cancel-persona").addEventListener("click",closePersona);
-bindForm("persona-form",async()=>{await api("persona",{public:$("persona-text").value});closePersona();});
+bindForm("persona-form",async()=>{
+  const sections=Object.fromEntries(Object.keys(personaNames).map(key=>[key,$(`persona-${key}`).value]));
+  await api("persona",{expected_version:personaEditVersion,public:$("persona-public").value,sections});closePersona();await loadPersonaHistory();
+});
+bindForm("memory-search-form",async()=>{
+  const query=$("memory-query").value.trim();
+  const results=await api(`memory/search?q=${encodeURIComponent(query)}&limit=20`);
+  renderMemoryResults(results);
+});
 bindForm("proposal-form",async()=>{await api("skills/propose",{text:$("candidate-text").value,evidence_refs:[$("evidence-select").value]});$("candidate-text").value="";});
 $("reflect").addEventListener("click",()=>busy($("proposal-form"),()=>api("reflection",{evidence_refs:[$("evidence-select").value]})));
 bindForm("rollback-form",()=>api("skills/rollback",{target_version:$("rollback-select").value}));

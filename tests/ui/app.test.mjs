@@ -17,28 +17,34 @@ async function until(predicate) {
 async function fixture(chat,modelRequest) {
   const dom=new JSDOM(html,{url:"http://127.0.0.1:8765/#token=fixture-token",runScripts:"outside-only",pretendToBeVisual:true});
   const {window}=dom,document=window.document;
-  const server={state:{fatigue:0,activity:"rest",mode:"normal",model_calls:0,tokens_used:0},limits:{model_calls:100,tokens:50000},backend:"replay",send_enabled:false,persona:{public:"A companion"},recap:{version:0,text:"",refs:[]},gates:{provider:"deferred",mempalace:"deferred",qq:"deferred",isolation:"disabled"},goals:[],activities:[],interactions:[],drafts:[],effects:[]};
-  const sends=[];
-  server.model={version:0,mode:"replay",url:"",model:"",key_present:false,source:"runtime",output_token_limit:null,token_budget:50000};
+  const server={state:{fatigue:0,activity:"rest",mode:"normal",model_calls:0,tokens_used:0},limits:{model_calls:100,tokens:50000,context_chars:131072,request_timeout:120},backend:"replay",send_enabled:false,persona:{version:0,public:"A companion",sections:{identity:"identity",relationship:"relationship",redline:"redline",user:"user",world:"world",dream:"dream",dark:"dark",mission:"mission"}},personaHistory:[{version:0,public:"A companion"}],memory:{backend:"local",method:"local lexical",evidence_count:0,pending_mempalace_sync:0,last_context:null},recap:{version:0,text:"",refs:[]},gates:{provider:"deferred",mempalace:"deferred",qq:"deferred",isolation:"disabled"},goals:[],activities:[],interactions:[],drafts:[],effects:[]};
+  const sends=[],writes=[],historyReads=[];let pollCallback=()=>{};
+  server.model={version:0,mode:"replay",url:"",model:"",key_present:false,source:"runtime",output_token_limit:null,token_budget:50000,context_chars:131072,request_timeout:120};
   window.HTMLDialogElement.prototype.showModal=function(){this.open=true;};
   window.HTMLDialogElement.prototype.close=function(){this.open=false;this.dispatchEvent(new window.Event("close"));};
   window.markdownit=MarkdownIt;window.createMessageRenderer=createMessageRenderer;window.shouldSubmitKey=shouldSubmitKey;
   window.matchMedia=()=>({matches:false,addEventListener(){}});
-  window.setInterval=()=>0;
+  window.setInterval=callback=>{pollCallback=callback;return 0;};
   window.fetch=async(path,options)=>{
     let result;
     if(path==="/api/session")result={csrf:"fixture-csrf"};
     else if(path==="/api/status")result=server;
     else if(path==="/api/chat"){
-      const body=JSON.parse(options.body);sends.push(body.text);if(chat)await chat();
-      result={event_id:`event-${sends.length}`,choice:"owner_served",input:body.text,text:"**已收到**"};
+      const body=JSON.parse(options.body);sends.push(body.text);const custom=chat?await chat(body.text):null;
+      result=custom||{event_id:`event-${sends.length}`,choice:"owner_served",input:body.text,text:"**已收到**"};
       server.interactions.push(result);
     }else if(path==="/api/model"||path==="/api/model/test"){
       const body=JSON.parse(options.body);
       if(modelRequest)await modelRequest(path,body);
       if(path==="/api/model/test")result={ok:true};
       else {server.model={...body,version:body.expected_version+1,key_present:true,source:"local"};delete server.model.api_key;server.limits.tokens=body.token_budget;result=server.model;}
+    }else if(path==="/api/persona"){
+      const body=JSON.parse(options.body);writes.push({path,body});
+      if(body.expected_version!==server.persona.version)return {ok:false,status:409,json:async()=>({detail:"stale"})};
+      server.persona={version:body.expected_version+1,public:body.public,sections:body.sections};server.personaHistory.push({version:server.persona.version,public:body.public});result=server.persona;
+    }else if(path==="/api/persona/history"){historyReads.push(path);result=server.personaHistory;
     }else if(path==="/api/evidence"||path==="/api/recap/history")result=[];
+    else if(path.startsWith("/api/memory/search?"))result=[];
     else throw new Error(`Unexpected fixture request: ${path}`);
     return {ok:true,status:200,json:async()=>structuredClone(result)};
   };
@@ -55,7 +61,7 @@ async function fixture(chat,modelRequest) {
     document.body.tabIndex=-1;document.body.focus();document.body.removeAttribute("tabindex");
     assert.equal(document.activeElement,document.body);
   }
-  return {window,document,textarea,sends,send,close:()=>window.close()};
+  return {window,document,textarea,sends,writes,historyReads,server,send,poll:async()=>{pollCallback();await until(()=>document.getElementById("persona-version").textContent.includes(`v${server.persona.version}`));},close:()=>window.close()};
 }
 
 test("successive keyboard turns restore the composer without duplicate messages",async()=>{
@@ -91,8 +97,74 @@ test("model settings test without activation then save the configured provider",
     d.getElementById("model-form").dispatchEvent(new ui.window.Event("submit",{bubbles:true,cancelable:true}));
     await until(()=>requests.length===2&&d.getElementById("model-key").value==="");
     assert.equal(requests[1].body.api_key,"private-key");
+    assert.equal(requests[1].body.context_chars,131072);
+    assert.equal(requests[1].body.request_timeout,120);
     assert.match(d.getElementById("runtime-label").textContent,/my-model/);
     assert.equal(d.getElementById("model-key").type,"password");
+  }finally{ui.close();}
+});
+
+test("persona editor exposes eight versioned sections and a public projection",async()=>{
+  const ui=await fixture();
+  try{
+    const d=ui.document;
+    d.getElementById("open-settings").click();d.querySelector('[data-setting="persona"]').click();
+    d.getElementById("edit-persona").click();
+    assert.equal(d.querySelectorAll("#persona-fields textarea").length,9);
+    d.getElementById("persona-identity").value="A clearer identity";
+    d.getElementById("persona-public").value="Public companion";
+    d.getElementById("persona-form").dispatchEvent(new ui.window.Event("submit",{bubbles:true,cancelable:true}));
+    await until(()=>ui.writes.some(write=>write.path==="/api/persona")&&!d.getElementById("persona-form").hasAttribute("aria-busy"));
+    const submitted=ui.writes.find(write=>write.path==="/api/persona").body;
+    assert.equal(submitted.expected_version,0);
+    assert.equal(submitted.sections.identity,"A clearer identity");
+    assert.equal(submitted.public,"Public companion");
+  }finally{ui.close();}
+});
+
+test("persona edits keep the version captured when the editor opened",async()=>{
+  const ui=await fixture();
+  try{
+    const d=ui.document;
+    d.getElementById("open-settings").click();d.querySelector('[data-setting="persona"]').click();
+    d.getElementById("edit-persona").click();
+    d.getElementById("persona-identity").value="Stale editor text";
+    ui.server.persona={...ui.server.persona,version:1,public:"Newer version"};
+    await ui.poll();
+    d.getElementById("persona-form").dispatchEvent(new ui.window.Event("submit",{bubbles:true,cancelable:true}));
+    await until(()=>!d.getElementById("persona-form").hasAttribute("aria-busy"));
+    assert.equal(ui.writes.at(-1).body.expected_version,0);
+    assert.equal(ui.server.persona.version,1);
+    assert.match(d.getElementById("settings-feedback").textContent,/状态已变化/);
+  }finally{ui.close();}
+});
+
+test("persona history loads in settings and refreshes after saving",async()=>{
+  const ui=await fixture();
+  try{
+    const d=ui.document;
+    d.getElementById("open-settings").click();d.querySelector('[data-setting="persona"]').click();
+    await until(()=>d.getElementById("persona-history").textContent.includes("人格 v0"));
+    assert.ok(ui.historyReads.length>=1);
+    d.getElementById("edit-persona").click();
+    d.getElementById("persona-public").value="New public version";
+    d.getElementById("persona-form").dispatchEvent(new ui.window.Event("submit",{bubbles:true,cancelable:true}));
+    await until(()=>!d.getElementById("persona-form").hasAttribute("aria-busy")&&d.getElementById("persona-history").textContent.includes("人格 v1"));
+  }finally{ui.close();}
+});
+
+test("memory page can run an explicit local recall search",async()=>{
+  const requests=[];
+  const ui=await fixture();
+  try{
+    const original=ui.window.fetch.bind(ui.window);
+    ui.window.fetch=async(path,options)=>{if(String(path).startsWith("/api/memory/search?"))requests.push(String(path));return original(path,options);};
+    ui.document.querySelector('[data-view="memory"]').click();
+    await until(()=>requests.length===0&&ui.document.getElementById("memory-status").textContent.includes("本机按关键词匹配"));
+    const input=ui.document.getElementById("memory-query");input.value="蓝鲸";
+    ui.document.getElementById("memory-search-form").dispatchEvent(new ui.window.Event("submit",{bubbles:true,cancelable:true}));
+    await until(()=>requests.length===1&&!ui.document.getElementById("memory-search-form").hasAttribute("aria-busy"));
+    assert.match(requests[0],/q=%E8%93%9D%E9%B2%B8/);
   }finally{ui.close();}
 });
 
@@ -172,6 +244,16 @@ test("failed send keeps the draft and returns keyboard focus",async()=>{
     assert.equal(ui.document.activeElement,ui.textarea);
     assert.match(ui.document.getElementById("notice-text").textContent,/输入已保留/);
     assert.equal(ui.document.querySelectorAll(".message-turn").length,0);
+  }finally{ui.close();}
+});
+
+test("structured model failure keeps the chat draft and shows the failure category",async()=>{
+  const ui=await fixture(text=>({event_id:"failure-1",choice:"owner_served",input:text,text:"模型请求超时。",error:{code:"timeout",message:"模型请求超时，可以调高请求超时后重试。"}}));
+  try{
+    ui.send("長回复请求");
+    await until(()=>!ui.textarea.disabled&&ui.document.querySelector(".chat-failure"));
+    assert.equal(ui.textarea.value,"長回复请求");
+    assert.match(ui.document.querySelector(".chat-failure").textContent,/timeout/);
   }finally{ui.close();}
 });
 

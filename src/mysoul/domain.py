@@ -70,7 +70,27 @@ class ActivityDecision(Contract):
     continuation: Literal["continue", "replan", "abandon"] | None = None
     rest_until: AwareDatetime | None = None
     chat_action: Literal["read", "silent", "reply"] = "silent"
-    reply: str = Field(default="", max_length=4000)
+    reply: str = Field(default="", max_length=131072)
+
+
+class ModelFailure(Contract):
+    code: Literal[
+        "timeout",
+        "context_limit",
+        "authentication",
+        "rate_limit",
+        "model_unavailable",
+        "connection",
+        "invalid_response",
+        "response_limit",
+        "provider_error",
+        "context_budget",
+    ]
+    message: str = Field(max_length=300)
+
+
+class FailedDecision(ActivityDecision):
+    failure: ModelFailure
 
 
 GoalStatus = Literal[
@@ -131,7 +151,7 @@ class ToolResult(Contract):
 
 class Evidence(Contract):
     id: str = Field(default_factory=uid)
-    text: str = Field(max_length=64000)
+    text: str = Field(max_length=131072)
     scope: Scope = Field(default_factory=Scope)
     source: str = "local"
     source_scopes: list[Scope] = Field(default_factory=list)
@@ -154,7 +174,13 @@ class RecapVersion(Contract):
 
 
 class ContextBudget(Contract):
-    max_chars: int = Field(default=16000, ge=128)
+    max_chars: int = Field(default=131072, ge=128, le=2097152)
+
+
+class ConversationMessage(Contract):
+    role: Literal["user", "assistant"]
+    content: str
+    event_id: str
 
 
 class ContextBundle(Contract):
@@ -165,6 +191,7 @@ class ContextBundle(Contract):
     recap_version: int = 0
     recap_invalidation_epoch: int = 0
     evidence: list[Evidence] = Field(default_factory=list)
+    history: list[ConversationMessage] = Field(default_factory=list)
     step_results: list[Evidence] = Field(default_factory=list)
     skill: str = ""
     recall_status: str = "available"
@@ -176,7 +203,7 @@ class ContextBundle(Contract):
 
 class ModelLimits(Contract):
     max_tokens: int | None = Field(default=1024, ge=1)
-    timeout: float = Field(default=30, gt=0)
+    timeout: float = Field(default=120, gt=0, le=600)
     retries: int = Field(default=0, ge=0, le=3)
 
 
