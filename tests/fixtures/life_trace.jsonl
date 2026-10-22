@@ -1,0 +1,2 @@
+{"id":"trace1","source":"replay","sender":"member","scope":{"audience":"group","conversation":"test-group"},"content":"今天先看看新闻。","dedup_key":"trace:1","received_at":"2026-10-22T00:00:00Z"}
+{"id":"trace2","source":"replay","sender":"member","scope":{"audience":"group","conversation":"test-group"},"content":"@mysoul 你好","dedup_key":"trace:2","received_at":"2026-10-22T00:01:00Z"}

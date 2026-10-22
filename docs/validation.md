@@ -22,3 +22,8 @@ All results are local development evidence, not live deployment claims.
 - RED: context and MemPalace adapter modules absent. GREEN: 10 tests passed; 1 real-engine test skipped for missing explicit process/index configuration.
 - Inspected upstream commit f41e8e75ddaadf5588d5127715fa531d79eadb45, MCP schemas and get-drawer response in source. This is an inspected revision, not a live-tested engine.
 - No summary cache is used, so every model admission reads the current Recap revision.
+
+## T05
+- RED: phone/service modules absent. GREEN: 6 end-to-end replay tests passed.
+- Two independent runs of the same trace produced silent/draft choices; owner interruption retained the goal; restart deduplicated events.
+- Replay has no network client and never instantiates NapCat.
