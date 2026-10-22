@@ -40,7 +40,7 @@ class ReplayModel:
             import json
 
             ready = json.loads(context.task.split("\n", 1)[1])
-            if ready["feedback"]:
+            if ready["feedback"] or ready.get("recap"):
                 return ActivityDecision(activity=Activity.REFLECT)
             if ready["goals"]:
                 return ActivityDecision(activity=Activity.WORK, goal_id=ready["goals"][0]["id"])
@@ -57,6 +57,9 @@ class ReplayModel:
     ) -> StepDecision:
         self.calls += 1
         self.payloads.append(context.payload())
+        if "[recap]" in context.instructions:
+            excerpts = "\n".join(f"[{e.id}] {e.text[:500]}" for e in context.evidence)
+            return StepDecision(done=True, note=(context.recap + "\n" + excerpts)[-3900:])
         if "[reflection]" in context.instructions:
             return StepDecision(
                 done=True,

@@ -194,6 +194,9 @@ async def test_candidate_test_completion_cannot_undo_rejection(tmp_path, monkeyp
 async def test_memory_outbox_drains_on_quiet_ticks_without_model_calls(tmp_path):
     async with SoulService(Settings(data_dir=tmp_path)) as soul:
         await soul.owner_message("retain my evidence")
+        state = soul.store.load_subject()
+        state.mode = "quiet"
+        soul.store.save_transition(state.dispatch_epoch, state)
         before = soul.model.calls
 
         class RecoveringMemory(FixtureMemory):

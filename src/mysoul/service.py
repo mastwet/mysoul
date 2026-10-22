@@ -355,6 +355,7 @@ class SoulService:
         self.store.add_evidence(
             Evidence(id=event.id, text=event.content, scope=event.scope, source=event.source)
         )
+        self.recap.enqueue(event.id)
         if admission_epoch is None:
             admission_epoch = self.store.load_subject().dispatch_epoch
         if decision is None:
