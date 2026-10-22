@@ -19,6 +19,7 @@ from mysoul.model import ReplayModel
 from mysoul.phone.replay import ReplayPhone
 from mysoul.scheduler import Scheduler
 from mysoul.storage import StateStore
+from mysoul.tools.files import ReadArgs, WorkspaceFiles, WriteArgs
 
 
 class SoulService:
@@ -36,6 +37,9 @@ class SoulService:
         self.scheduler = Scheduler(settings.event_capacity)
         self.effects = EffectDispatcher(self.store)
         self.effects.register("draft", self._draft, {"owner", "group", "public"})
+        self.files = WorkspaceFiles(settings.data_dir / "workspace")
+        self.effects.register("read_file", self._read_file)
+        self.effects.register("write_file", self._write_file)
         self.executor = Executor(
             self.store,
             self.model,
@@ -76,6 +80,38 @@ class SoulService:
             receipt=f"draft:{request.action_id}",
             content=text,
         )
+
+    async def _read_file(self, request):
+        try:
+            args = ReadArgs.model_validate(request.arguments)
+            text = self.files.read(args.path)
+            evidence = Evidence(text=text, source=f"workspace:{args.path}", scope=request.scope)
+            self.store.add_evidence(evidence)
+            return ToolResult(
+                action_id=request.action_id,
+                outcome="confirmed",
+                content=text,
+                evidence_ref=evidence.id,
+            )
+        except (OSError, ValueError) as exc:
+            return ToolResult(
+                action_id=request.action_id, outcome="failed", error=type(exc).__name__
+            )
+
+    async def _write_file(self, request):
+        try:
+            args = WriteArgs.model_validate(request.arguments)
+            self.files.write(args.path, args.text)
+            return ToolResult(
+                action_id=request.action_id,
+                outcome="confirmed",
+                receipt=f"workspace:{args.path}",
+                content=f"Wrote {args.path}",
+            )
+        except (OSError, ValueError) as exc:
+            return ToolResult(
+                action_id=request.action_id, outcome="failed", error=type(exc).__name__
+            )
 
     async def receive(self, event: Event):
         # External callers never get to assert owner authority in an Event field.

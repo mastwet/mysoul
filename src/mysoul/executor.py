@@ -179,6 +179,23 @@ class Executor:
                     if result["outcome"] != "confirmed":
                         self.store.save_activity(latest)
                         return self._finish(latest, "suspended")
+                    from mysoul.domain import Evidence
+
+                    context = ContextBundle.model_validate(
+                        self.store.get("activity_context", activity.id)
+                    )
+                    evidence = Evidence(
+                        text=result.get("content", ""),
+                        scope=context.scope,
+                        source=f"tool:{result['action_id']}",
+                    )
+                    self.store.add_evidence(evidence)
+                    latest.context_refs.append(evidence.id)
+                    context.evidence.append(evidence)
+                    if len(context.payload()) > 16000:
+                        self.store.save_activity(latest)
+                        return self._finish(latest, "suspended")
+                    self.store.put("activity_context", activity.id, context.model_dump(mode="json"))
                 latest.cursor += 1
                 latest.checkpoint_ref = activity.id
                 self.store.save_activity(latest)

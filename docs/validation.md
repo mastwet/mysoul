@@ -32,3 +32,9 @@ All results are local development evidence, not live deployment claims.
 - RED: provider and NapCat modules absent. GREEN: 8 fixture-backed contract tests passed.
 - Covered malformed output, refusal, timeout, bounded retry, raw model ID, forged owner names, duplicate events, allowlist/send denial and lost acknowledgment.
 - Real provider and QQ deployment/smoke remain deferred. OneBot mapping checked against https://napneko.github.io/onebot/api and the OneBot 11 public API.
+
+## T07
+- RED: work-tool modules absent; end-to-end artifact task suspended before registration. GREEN: 13 tests passed after implementation.
+- Actual Windows symlink escape, alternate paths, hardlinks, oversized I/O and a real write/read/feedback task verified.
+- Windows parent directory handles deny replacement during I/O; file contents are accessed only after handle-path verification.
+- Arbitrary execution is unconditionally disabled; actual-isolation tests report skipped, never approved.
