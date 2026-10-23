@@ -114,11 +114,26 @@ class CompressionService:
     def prepare(self, *, force=False):
         policy = self.policy()
         work_budget = self.soul.settings.context_chars
+        demand = self.store.get("archive_context", "current") or {}
+        task = (
+            demand.get("task", "")
+            if demand.get("epoch") == self.store.load_subject().dispatch_epoch
+            else ""
+        )
+        try:
+            assembler = self.soul.context_assembler(Scope(), task)
+            required = assembler.base_bundle(Scope())
+            required.history = [message for turn in assembler.history for message in turn]
+            required.persona_version = self.soul.persona.current().version
+            context_chars = len(required.payload())
+        except ContextOverflow:
+            context_chars = work_budget + 1
         for _ in range(32):
             plan = self.archives.plan(
                 policy.model_copy(update={"enabled": True}) if force else policy,
                 work_budget,
                 min(2048, work_budget // 3),
+                context_chars=context_chars,
             )
             if plan is None:
                 return None

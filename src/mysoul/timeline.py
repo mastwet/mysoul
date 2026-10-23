@@ -181,16 +181,20 @@ class TimelineStore:
                     self.event_in(db, event)
             db.execute("INSERT INTO objects VALUES('timeline_migration','v1','{}')")
 
-    def page(self, *, before=None, after_change=0, limit=50):
-        if not 1 <= limit <= 100 or (before is not None and before < 1) or after_change < 0:
+    def page(self, *, before=None, after_change=None, limit=50):
+        if (
+            not 1 <= limit <= 100
+            or (before is not None and before < 1)
+            or (after_change is not None and after_change < 0)
+        ):
             raise ValueError("Invalid timeline cursor or limit")
-        if before is not None and after_change:
+        if before is not None and after_change is not None:
             raise ValueError("Use older paging or change polling separately")
         with self.store.lock:
             db = self.store.db
             watermark = db.execute("SELECT COALESCE(MAX(seq),0) FROM timeline").fetchone()[0]
             cursor = db.execute("SELECT COALESCE(MAX(seq),0) FROM timeline_changes").fetchone()[0]
-            if after_change:
+            if after_change is not None:
                 rows = db.execute(
                     "SELECT * FROM timeline WHERE change_seq>? AND change_seq<=? "
                     "ORDER BY change_seq LIMIT ?",
@@ -220,7 +224,7 @@ class TimelineStore:
                 items.append(TimelineItem.model_validate(data))
             change_cursor = (
                 max((i.change_seq for i in items), default=after_change)
-                if (after_change and more)
+                if (after_change is not None and more)
                 else cursor
             )
             items.sort(key=lambda i: i.seq)

@@ -223,7 +223,7 @@ class ContextAssembler:
         self.required_evidence = required_evidence
         self.required_history = required_history
 
-    async def build(self, scope: Scope, budget: ContextBudget) -> ContextBundle:
+    def base_bundle(self, scope: Scope) -> ContextBundle:
         # Deliberately no summary cache: every admission reads the committed head.
         version = self.recap.current()
         bundle = ContextBundle(scope=scope, task=self.task)
@@ -240,6 +240,10 @@ class ContextAssembler:
         bundle.recap_invalidation_epoch = version.invalidation_epoch
         bundle.evidence = list(self.required_evidence)
         bundle.archives = [e for e in self.archive_evidence if e.permitted(scope)]
+        return bundle
+
+    async def build(self, scope: Scope, budget: ContextBudget) -> ContextBundle:
+        bundle = self.base_bundle(scope)
         if len(bundle.payload()) > budget.max_chars:
             raise ContextOverflow("Required context and raw sources exceed context budget")
         # Most recent whole turns first for admission; emit them chronologically.
@@ -262,12 +266,16 @@ class ContextAssembler:
         if len(bundle.payload()) > budget.max_chars:
             raise ContextOverflow("Committed context changed beyond admission budget")
         for hit in hits:
-            if (
-                hit.id in self.covered_refs
-                or hit.id in {e.id for e in bundle.evidence}
-                or not hit.permitted(scope)
-            ):
+            if not hit.permitted(scope):
                 continue
+            existing_ids = {e.id for e in bundle.evidence + bundle.archives}
+            if hit.id in existing_ids:
+                continue
+            if hit.id in self.covered_refs:
+                detail = getattr(self.memory, "detail", None)
+                hit = await detail(hit, self.task, scope) if detail else None
+                if hit is None or hit.id in existing_ids:
+                    continue
             history_events = {message.event_id for message in bundle.history}
             if hit.id in history_events or (
                 hit.source == "assistant-reply" and hit.id.removeprefix("reply:") in history_events

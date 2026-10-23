@@ -286,7 +286,7 @@ function renderSnapshot(force=false) {
   $("connection-description").textContent=`模型：${modelLabel}。${snapshot.backend==="replay"?"QQ 使用离线回放。":`QQ 通道已配置，真实发送${snapshot.send_enabled?"已启用":"未启用"}。`}下方为完整集成验收状态，保存配置或连接测试不会自动通过验收。`;
   const gateNames={provider:"模型服务",mempalace:"长期记忆",qq:"QQ 通道",isolation:"代码执行"};
   keyedList($("gates"),Object.entries(snapshot.gates).map(([key,value])=>({key,value})),item=>{const li=node("li");li.append(node("b",gateNames[item.key]),node("span",item.value==="disabled"?"未启用":item.value==="deferred"?"待验收":item.value));return li;},"",force);
-  renderMessages();renderJobs(snapshot,force);
+  renderMessages(false,force);renderJobs(snapshot,force);
 }
 
 function nearBottom() {const el=$("conversation-scroll");return el.scrollHeight-el.scrollTop-el.clientHeight<90;}
@@ -337,9 +337,10 @@ async function pollTimeline() {
 }
 $("load-older").addEventListener("click",async()=>{
  if(historyLoading)return;historyLoading=true;const button=$("load-older"),scroller=$("conversation-scroll");
- const previous={scrollTop:scroller.scrollTop,scrollHeight:scroller.scrollHeight};button.disabled=true;$("history-feedback").textContent="加载中…";
+ button.disabled=true;$("history-feedback").textContent="加载中…";
  try{
   const page=await api(`timeline?before=${olderCursor||timelineItems[0]?.seq||1}`);
+  const previous={scrollTop:scroller.scrollTop,scrollHeight:scroller.scrollHeight};
   timelineItems=mergeTimeline(timelineItems,page);olderCursor=page.next_before;renderMessages(true);
   button.hidden=!page.has_more;$("history-feedback").textContent=page.has_more?"":"已到最早的消息";
   scroller.scrollTop=prependScrollAnchor(previous,{scrollHeight:scroller.scrollHeight});
@@ -359,14 +360,14 @@ function renderTask(item) {
  if(["pending","active","suspended"].includes(task.status))actions.append(actionButton("取消任务",()=>api(`goals/${encodeURIComponent(task.goal_id)}/cancel`,{})));
  row.append(actions);return row;
 }
-function renderMessages(prepending=false) {
+function renderMessages(prepending=false,force=false) {
  const items=timelineItems.map(item=>({...item,key:item.id}));
  if(pendingChat&&!items.some(item=>item.seq>pendingChat.watermark&&item.kind==="chat"&&item.body.input===pendingChat.input))items.push({...pendingChat,key:"pending",optimistic:true});
- const signature=JSON.stringify(items);if(signature===chatSignature)return;chatSignature=signature;
+ const signature=JSON.stringify(items);if(signature===chatSignature&&!force)return;chatSignature=signature;
  const stick=!prepending&&(!loadedChat||nearBottom());loadedChat=true;
  const openTasks=new Set([...$("messages").querySelectorAll('article[data-key]')].filter(row=>row.querySelector('details[open]')).map(row=>row.dataset.key));
  $("chat-empty").hidden=items.length>0;$("messages").hidden=!items.length;
- keyedList($("messages"),items,item=>item.kind==="task"?renderTask(item):renderTurn(item.optimistic?{...item,pending:true}:{...item.body,key:item.key}),"");
+ keyedList($("messages"),items,item=>item.kind==="task"?renderTask(item):renderTurn(item.optimistic?{...item,pending:true}:{...item.body,key:item.key}),"",true);
  for(const row of $("messages").children)if(openTasks.has(row.dataset.key)&&row.querySelector('details'))row.querySelector('details').open=true;
  if(stick)requestAnimationFrame(scrollBottom);else if(!prepending)$("jump-bottom").hidden=false;
 }

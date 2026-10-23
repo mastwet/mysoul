@@ -96,7 +96,7 @@ class ArchiveStore:
             rows = db.execute(
                 "SELECT seq,id,created_at,body,revision,kind FROM timeline ORDER BY seq"
             ).fetchall()
-            nodes = self.nodes()
+            nodes = [n for n in self.nodes() if n.scope == scope]
             known = {n.id for n in nodes}
             active = [n for n in nodes if n.active]
             rebuild = set()
@@ -136,14 +136,20 @@ class ArchiveStore:
                     total=len(text),
                 )
                 self.save_in(db, leaf)
-        return sorted((n for n in self.nodes() if n.active), key=lambda n: n.first_seq)
+        return sorted(
+            (n for n in self.nodes() if n.active and n.scope == scope), key=lambda n: n.first_seq
+        )
 
-    def plan(self, policy, budget_chars, reserved_chars):
+    def plan(self, policy, budget_chars, reserved_chars, *, context_chars=None):
         policy = CompressionPolicy.model_validate(policy)
         nodes = self.frontier(Scope())
         if not policy.enabled or not nodes:
             return None
-        size = sum(len(n.text) for n in nodes) + reserved_chars
+        size = (
+            sum(len(n.text) for n in nodes) + reserved_chars
+            if context_chars is None
+            else context_chars
+        )
         drain = self.store.get("archive_drain", "owner") or {}
         pressure = drain.get("active", False) and drain.get("policy_version") == policy.version
         if size >= budget_chars * policy.high_water:
@@ -165,16 +171,19 @@ class ArchiveStore:
             if group[0].level > 0 and (len(group) >= policy.upper_trigger or upper_pressure):
                 candidates.append(group[: policy.upper_batch])
         if not candidates:
-            for group in groups:
-                if group[0].level != 0:
+            # An unfinished item is a boundary, not a barrier to every later run.
+            windows = [
+                list(g)
+                for _, g in groupby(
+                    nodes, key=lambda n: n.level == 0 and n.eligible and n.id not in protected
+                )
+            ]
+            for window in windows:
+                first = window[0]
+                if first.level != 0 or not first.eligible or first.id in protected:
                     continue
-                allowed = []
-                for node in group:
-                    if node.id in protected or not node.eligible:
-                        break
-                    allowed.append(node)
-                if allowed and (len(raw) >= policy.raw_trigger or pressure):
-                    candidates.append(allowed[: policy.raw_batch])
+                if sum(n.eligible for n in raw) >= policy.raw_trigger or pressure:
+                    candidates.append(window[: policy.raw_batch])
                     break
         if not candidates:
             return None

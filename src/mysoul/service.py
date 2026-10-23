@@ -150,6 +150,9 @@ class SoulService:
                     self.settings.mempalace_config, self.store
                 )
                 self.memory = await self.memory_process.__aenter__()
+            from mysoul.archive_memory import ArchiveMemory
+
+            self.memory = ArchiveMemory(self.memory, self.compression.archives)
             await self.executor.open()
         except BaseException:
             self.lease.release()
@@ -267,7 +270,7 @@ class SoulService:
             except TimeoutError:
                 pass
 
-    async def context(self, scope, task=""):
+    def context_assembler(self, scope, task=""):
         pending = []
         archived = []
         covered_refs = set()
@@ -277,6 +280,12 @@ class SoulService:
 
             frontier = self.compression.archives.frontier(scope)
             tail = self.compression.policy().keep_recent
+            raw_ids = {
+                __import__("json").loads(n.text)["source_id"].removeprefix("chat:")
+                for n in frontier
+                if n.level == 0
+            }
+            history = [turn for turn in history if turn[0].event_id in raw_ids]
             history = history[-tail:] if tail else []
             history_ids = {m.event_id for turn in history for m in turn}
             for node in frontier:
@@ -313,7 +322,7 @@ class SoulService:
                     value = json.loads(node.text)
                     if value["source_id"].removeprefix("chat:") in history_ids:
                         continue
-                    if value["body"].get("pending"):
+                    if value["body"].get("pending") and value["body"].get("input") == task:
                         continue
                 if len(node.text) > 131072:
                     raise ContextOverflow("Required archive source needs background compression")
@@ -338,7 +347,7 @@ class SoulService:
         elif scope.audience == "owner":
             history = history[-self.cognition.policy().tail_turns :]
         profile = self.persona.current()
-        bundle = await ContextAssembler(
+        return ContextAssembler(
             self.recap,
             self.memory,
             task=task,
@@ -348,7 +357,22 @@ class SoulService:
             archive_evidence=archived,
             covered_refs=covered_refs,
             required_history=scope.audience == "owner",
-        ).build(scope, ContextBudget(max_chars=self.settings.context_chars))
+        )
+
+    async def context(self, scope, task=""):
+        if scope == Scope():
+            self.store.put(
+                "archive_context",
+                "current",
+                {
+                    "epoch": self.store.load_subject().dispatch_epoch,
+                    "task": task,
+                },
+            )
+        profile = self.persona.current()
+        bundle = await self.context_assembler(scope, task).build(
+            scope, ContextBudget(max_chars=self.settings.context_chars)
+        )
         bundle.persona_version = profile.version
         self.context_metrics = {
             "payload_chars": len(bundle.payload()),

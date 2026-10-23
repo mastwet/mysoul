@@ -489,3 +489,37 @@ test("pagination with live append preserves older messages and newer card revisi
   assert.match(ui.document.getElementById('turn-e4').textContent,/reply 2/);
  }finally{ui.close();}
 });
+
+test("cancelled task card reconciles after its busy action completes",async()=>{
+ const ui=await fixture();try{
+  ui.server.timeline=[{id:'task:g',seq:1,revision:1,kind:'task',body:{goal_id:'g',activity_id:'a',objective:'Task action',status:'suspended'}}];
+  await ui.poll();await until(()=>ui.document.querySelector('[data-key="task:g"]'));
+  const fetch=ui.window.fetch;ui.window.fetch=async(path,options)=>{
+   if(path==='/api/goals/g/cancel'){
+    ui.server.timeline[0]={...ui.server.timeline[0],revision:2,body:{...ui.server.timeline[0].body,status:'cancelled'}};
+    return {ok:true,json:async()=>({status:'cancelled'})};
+   }return fetch(path,options);
+  };
+  const row=ui.document.querySelector('[data-key="task:g"]');[...row.querySelectorAll('button')].find(b=>b.textContent==='取消任务').click();
+  await until(()=>!row.hasAttribute('aria-busy'));await ui.poll();
+  await until(()=>ui.document.querySelector('[data-key="task:g"]').textContent.includes('已取消'));
+  assert.equal(ui.document.querySelector('[data-key="task:g"]').querySelectorAll('button').length,0);await new Promise(r=>setTimeout(r,30));
+ }finally{ui.close();}
+});
+test("delayed older page anchors only prepend growth and preserves intervening scroll",async()=>{
+ const ui=await fixture();let release;try{
+  const row=seq=>({id:`chat:p${seq}`,seq,revision:1,kind:'chat',body:{event_id:`p${seq}`,input:`p${seq}`,text:'reply',choice:'owner_served'}});
+  ui.server.timeline=[row(3),row(4)];await ui.poll();await until(()=>ui.document.getElementById('turn-p4'));await new Promise(r=>setTimeout(r,25));
+  const scroller=ui.document.getElementById('conversation-scroll');
+  Object.defineProperty(scroller,'scrollHeight',{get:()=>1000+(ui.document.getElementById('messages').children.length-2)*100});
+  scroller.scrollTop=100;const fetch=ui.window.fetch;
+  ui.window.fetch=async(path,options)=>{
+   if(String(path).includes('before=')){await new Promise(resolve=>{release=resolve;});return {ok:true,json:async()=>({items:[row(1),row(2)],has_more:false,next_before:1})};}
+   return fetch(path,options);
+  };
+  ui.document.getElementById('load-older').hidden=false;ui.document.getElementById('load-older').click();await until(()=>release);
+  ui.server.timeline.push(row(5));await ui.poll();await until(()=>ui.document.getElementById('turn-p5'));
+  scroller.scrollTop=300;release();await until(()=>!ui.document.getElementById('load-older').disabled);
+  assert.equal(scroller.scrollTop,500);
+ }finally{if(release)release();ui.close();}
+});

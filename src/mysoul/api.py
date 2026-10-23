@@ -325,7 +325,7 @@ def create_app(settings: Settings | None = None, *, token=None, service=None):
     @app.get("/api/timeline", dependencies=guard)
     async def timeline(
         before: int | None = Query(default=None, ge=1),
-        after_change: int = Query(default=0, ge=0),
+        after_change: int | None = Query(default=None, ge=0),
         limit: int = Query(default=50, ge=1, le=100),
     ):
         from mysoul.timeline import TimelineStore

@@ -55,6 +55,7 @@ def test_archive_scope_security_and_queued_version(client):
     assert client.get("/api/archives/secret").status_code == 403
     assert client.get("/api/archives/missing").status_code == 404
     assert client.get("/api/archives").status_code == 200
+    assert not client.get("/api/archives").json()["frontier"]
     for headers in [{"Origin": "http://evil.test"}, {"X-CSRF-Token": "bad"}]:
         assert (
             client.post(

@@ -23,7 +23,10 @@ class UnifiedModel(ReplayModel):
             self.calls += 1
             return StepDecision(
                 done=True,
-                note="History includes owner requests, verified report and cancellation. Preserve these commitments.",
+                note=(
+                    "History includes owner requests, verified report and cancellation. "
+                    "Preserve these commitments."
+                ),
             )
         return await super().execute_step(context, tools, limits)
 
