@@ -278,3 +278,14 @@ hash. Prefer this newer snapshot for post-migration recovery. The preserved orig
 pre-migration backup remains available separately. Detailed old facts can be recalled
 through the existing Memory adapter and bounded source excerpts; the model does not
 receive an entire archive's originals for one detail query.
+
+
+Recap entries use `YYYY-MM-DD HH:mm:ss — 简短记忆描述`, with optional real location
+and people inside the short event sentence. For example, sharing a toucan article
+becomes “我和用户分享了巨嘴鸟的结构奇迹。” rather than a reproduction of article facts.
+Internal experience IDs and hashes belong to source metadata, not Recap prose.
+Unknown old event times must remain explicitly unknown, never replaced by the time
+of consolidation. Original evidence retains full timestamp precision and provenance.
+Existing Recap reformatting creates a version and must not advance pending coverage;
+it uses the configured provider only with authorization for that private data and
+its destination. The second-only display cleanup can run locally without inference.

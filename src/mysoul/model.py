@@ -85,8 +85,9 @@ class ReplayModel:
         self.calls += 1
         self.payloads.append(context.payload())
         if "[recap]" in context.instructions:
-            excerpts = "\n".join(f"[{e.id}] {e.text[:500]}" for e in context.evidence)
-            return StepDecision(done=True, note=(context.recap + "\n" + excerpts)[-3900:])
+            from mysoul.recap_style import replay_recap
+
+            return StepDecision(done=True, note=replay_recap(context))
         if "[reflection]" in context.instructions:
             return StepDecision(
                 done=True,

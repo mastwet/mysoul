@@ -141,37 +141,36 @@ class RecapStore:
         return [s["id"] for s in self.store.all("recap_segment") if s["status"] == "pending"]
 
 
-async def consolidate_recap(soul, expected_epoch):
+async def consolidate_recap(soul, expected_epoch, *, rewrite=False):
     """Only called from a chosen reflection activity, never as hidden rest polling."""
     import asyncio
 
     from mysoul.domain import ContextBundle, ModelLimits
     from mysoul.model import budget_exceeded, reservation
+    from mysoul.recap_style import (
+        RECAP_INSTRUCTIONS,
+        clean_recap,
+        previous_for_prompt,
+        recap_evidence,
+    )
 
-    refs = soul.recap.pending()[:4]
-    if not refs:
-        return None
     previous = soul.recap.current()
+    refs = [] if rewrite else soul.recap.pending()[:4]
+    if not refs and (not rewrite or not previous.text.strip()):
+        return None
     context = ContextBundle(
-        instructions=(
-            "[recap] Write a compact, useful private memory in note, done=true, no tool. "
-            "Keep confirmed owner facts and interaction preferences separate from active topics. "
-            "Assistant replies are model-authored: preserve fiction only as a clearly labeled "
-            "continuity note, never as owner biography. Keep durable details and open threads; "
-            "omit greetings, UI/tool acceptance logs, routine errors, and event IDs unless they "
-            "matter to an unresolved issue. Cite stable evidence IDs after claims. "
-            "Do not infer personal facts. Excerpts may be truncated; "
-            "original evidence remains retrievable."
-        ),
-        recap=previous.text,
+        instructions=RECAP_INSTRUCTIONS,
+        recap=previous_for_prompt(soul.store, previous.text),
         recap_version=previous.version,
         recap_invalidation_epoch=previous.invalidation_epoch,
-        evidence=[
-            soul.store.evidence(ref).model_copy(
-                update={"text": soul.store.evidence(ref).text[:1000]}
-            )
-            for ref in refs
-        ],
+        evidence=recap_evidence(
+            [
+                soul.store.evidence(ref).model_copy(
+                    update={"text": soul.store.evidence(ref).text[:1000]}
+                )
+                for ref in refs
+            ]
+        ),
     )
     if len(context.payload()) > soul.settings.context_chars:
         raise ContextOverflow("Recap needs operator reduction before automatic consolidation")
@@ -192,9 +191,12 @@ async def consolidate_recap(soul, expected_epoch):
     result = await asyncio.wait_for(soul.model.execute_step(context, [], limits), limits.timeout)
     if not result.done or result.tool or not result.note.strip():
         raise ValueError("Recap synthesis must produce a complete document without tools")
+    note = clean_recap(result.note)
+    if not note:
+        raise ValueError("Recap contains no event memory after removing citations")
     return soul.recap.publish(
         previous.version,
-        result.note,
+        note,
         list(dict.fromkeys(previous.refs + refs)),
         author="agent",
         segments=refs,

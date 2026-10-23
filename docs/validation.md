@@ -441,3 +441,34 @@ Review rulings retained after scratch-ledger cleanup:
   would leave those integrations unproven; this delivery makes no such certification.
 - The known test line-length issue is resolved by a clean Ruff run; it is not an
   outstanding functional defect. New changes must rerun the static gate.
+
+
+### Concise, citation-free event memories (2026-10-23)
+
+- Owner requested Recap/active-memory prose without experience hashes, one short event
+  per line, location/person only when supplied, and a date/time precise to seconds:
+  `YYYY-MM-DD HH:mm:ss — 简短记忆描述`. Fractions and timezone suffixes are excluded
+  from display; original structured evidence timestamps and internal IDs remain intact.
+- Both automatic consolidation and legacy synthesis now use the same prompt and safe
+  display projection. Recap source aliases replace opaque IDs in synthesis input;
+  persona reflection retains real evidence references. Source-citation brackets are
+  removed before publication, while factual fingerprint/code text remains intact.
+  Citation-only output fails without erasing Recap or advancing source coverage.
+- Real-provider synthetic toucan fixture returned exactly the requested short event
+  with its source timestamp in11.34 seconds. Owner subsequently requested second-only
+  display; deterministic tests cover removal of fractions/zone suffixes in input/output.
+- Automatic approval initially rejected sending the existing private Recap because
+  specific data/destination authorization was missing. No rejected command executed.
+  Owner then explicitly authorized this Recap to localhost8045/v1 and its possible
+  upstream; the one real reformat completed in72.94 seconds. Version102 (9435 chars,
+  113 experience/outcome citations) became103 (3405 chars,0 citations,52 timed lines).
+  A local-only, zero-inference time-format pass published104 (2729 chars), retaining
+  all source refs and previous versions. All52 lines match the second-only format.
+- Full stopped-directory backups before both changes:
+  - `.local/backups/recap-style-20261023-170140/ui-redesign`
+  - `.local/backups/recap-seconds-20261023-170427/ui-redesign`
+
+- Actual8767 service restarted with tokenless local-test settings, unlimited aggregate
+  budgets and three-minute initiative intact. Final280 Python passed/8 external skips,
+  34 UI passed, clean Ruff, JS syntax, offline build and whitespace checks. No new
+  external release-gate certification is implied.
