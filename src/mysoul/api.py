@@ -209,6 +209,12 @@ def create_app(settings: Settings | None = None, *, token=None, service=None):
             Path(__file__).parent / "web/conversation.mjs", media_type="text/javascript"
         )
 
+    @app.get("/timeline.mjs")
+    async def timeline_module():
+        return FileResponse(
+            Path(__file__).parent / "web/timeline.mjs", media_type="text/javascript"
+        )
+
     @app.get("/vendor/markdown-it.min.js")
     async def markdown_vendor():
         return FileResponse(
@@ -295,9 +301,7 @@ def create_app(settings: Settings | None = None, *, token=None, service=None):
             state.next_initiative_at = now()
             state.autonomy_last_result = "waiting"
         elif state.autonomy_interval_minutes != previous_interval:
-            state.next_initiative_at = now() + timedelta(
-                minutes=state.autonomy_interval_minutes
-            )
+            state.next_initiative_at = now() + timedelta(minutes=state.autonomy_interval_minutes)
         elif state.next_initiative_at is None:
             state.next_initiative_at = now()
         soul.store.save_transition(state.dispatch_epoch, state)
@@ -317,6 +321,42 @@ def create_app(settings: Settings | None = None, *, token=None, service=None):
         task = asyncio.create_task(background(coroutine))
         jobs.add(task)
         task.add_done_callback(jobs.discard)
+
+    @app.get("/api/timeline", dependencies=guard)
+    async def timeline(
+        before: int | None = Query(default=None, ge=1),
+        after_change: int = Query(default=0, ge=0),
+        limit: int = Query(default=50, ge=1, le=100),
+    ):
+        from mysoul.timeline import TimelineStore
+
+        return TimelineStore(app.state.soul.store).page(
+            before=before, after_change=after_change, limit=limit
+        )
+
+    @app.get("/api/archives", dependencies=guard)
+    async def archives():
+        return app.state.soul.compression.status()
+
+    @app.get("/api/archives/{node_id}", dependencies=guard)
+    async def archive(
+        node_id: str,
+        before: int | None = Query(default=None, ge=1),
+        limit: int = Query(default=50, ge=1, le=100),
+    ):
+        from mysoul.domain import Scope
+
+        return app.state.soul.compression.archives.expand(
+            node_id, Scope(), before=before, limit=limit
+        )
+
+    @app.post("/api/archives/run", dependencies=guard, status_code=202)
+    async def archive_run(body: RevisionInput):
+        run = app.state.soul.compression.enqueue(body.expected_version)
+        if run is None:
+            return {"status": "empty", "run_id": None}
+        launch(app.state.soul.compression.run_due(force=True))
+        return {"status": run.status, "run_id": run.id}
 
     @app.get("/api/cognition", dependencies=guard)
     async def cognition_status():

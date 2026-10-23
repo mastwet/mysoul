@@ -95,6 +95,38 @@ class CompressionService:
         if self.soul.recap.current().invalidation_epoch != plan.invalidation_epoch:
             raise Conflict("Recap clear superseded archive run")
 
+    def enqueue(self, expected_version):
+        if self.policy().version != expected_version:
+            raise Conflict("Compression policy changed")
+        for value in self.store.all("compression_run"):
+            if value["status"] in {"queued", "running", "failed"}:
+                run = CompressionRun.model_validate(value)
+                run.next_attempt_at = None
+                self.save(run)
+                return run
+        plan = self.prepare(force=True)
+        if plan is None:
+            return None
+        run = CompressionRun(plan=plan)
+        self.save(run)
+        return run
+
+    def prepare(self, *, force=False):
+        policy = self.policy()
+        work_budget = self.soul.settings.context_chars
+        for _ in range(32):
+            plan = self.archives.plan(
+                policy.model_copy(update={"enabled": True}) if force else policy,
+                work_budget,
+                min(2048, work_budget // 3),
+            )
+            if plan is None:
+                return None
+            if len(self.context(plan).payload()) <= self.soul.settings.context_chars:
+                return plan
+            work_budget = int(work_budget * 0.85)
+        raise ContextOverflow("Archive source cannot fit request framing")
+
     async def run_due(self, *, force=False):
         soul = self.soul
         state = self.store.load_subject()
@@ -125,21 +157,9 @@ class CompressionService:
         ):
             return None
         if run is None:
-            plan = None
-            work_budget = soul.settings.context_chars
-            for _ in range(32):
-                plan = self.archives.plan(
-                    policy.model_copy(update={"enabled": True}) if force else policy,
-                    work_budget,
-                    min(2048, work_budget // 3),
-                )
-                if plan is None:
-                    return None
-                if len(self.context(plan).payload()) <= soul.settings.context_chars:
-                    break
-                work_budget = int(work_budget * 0.85)
-            else:
-                raise ContextOverflow("Archive source cannot fit request framing")
+            plan = self.prepare(force=force)
+            if plan is None:
+                return None
             run = CompressionRun(plan=plan)
             self.save(run)
         with soul.admission.hold("compression"):

@@ -5,6 +5,7 @@ import test from "node:test";
 import {JSDOM} from "jsdom";
 import {createMessageRenderer,shouldSubmitKey} from "../../src/mysoul/web/conversation.mjs";
 
+import {mergeTimeline,prependScrollAnchor} from "../../src/mysoul/web/timeline.mjs";
 const require=createRequire(import.meta.url);
 const MarkdownIt=require("../../src/mysoul/web/vendor/markdown-it.min.js");
 const html=await readFile(new URL("../../src/mysoul/web/index.html",import.meta.url),"utf8");
@@ -22,13 +23,17 @@ async function fixture(chat,modelRequest,{tokenless=false}={}) {
   server.model={version:0,mode:"replay",url:"",model:"",key_present:false,source:"runtime",output_token_limit:null,token_budget:50000,context_chars:131072,request_timeout:120};
   window.HTMLDialogElement.prototype.showModal=function(){this.open=true;};
   window.HTMLDialogElement.prototype.close=function(){this.open=false;this.dispatchEvent(new window.Event("close"));};
-  window.markdownit=MarkdownIt;window.createMessageRenderer=createMessageRenderer;window.shouldSubmitKey=shouldSubmitKey;
+  window.mergeTimeline=mergeTimeline;window.prependScrollAnchor=prependScrollAnchor;window.markdownit=MarkdownIt;window.createMessageRenderer=createMessageRenderer;window.shouldSubmitKey=shouldSubmitKey;
   window.matchMedia=()=>({matches:false,addEventListener(){}});
   window.setInterval=callback=>{pollCallback=callback;return 0;};
   window.fetch=async(path,options)=>{
     let result;
     if(path==="/api/session")result={csrf:"fixture-csrf",auth_required:!tokenless};
     else if(path==="/api/status")result=server;
+    else if(path.startsWith('/api/timeline')){
+      const items=[...server.interactions.map((body,i)=>({id:`chat:${body.event_id}`,seq:i+1,revision:1,kind:'chat',body})),...(server.timeline||[])];
+      result={items,next_before:items[0]?.seq||null,has_more:false,change_cursor:items.length};
+    }else if(path==='/api/archives')result=server.compression||{policy:{version:0},frontier:[],runs:[]};
     else if(path==="/api/chat"){
       const body=JSON.parse(options.body);sends.push(body.text);const custom=chat?await chat(body.text):null;
       result=custom||{event_id:`event-${sends.length}`,choice:"owner_served",input:body.text,text:"**已收到**"};
@@ -113,7 +118,7 @@ test("autonomous messages are labeled in the main conversation",async()=>{
     await until(()=>ui.document.getElementById("turn-initiative-1"));
     assert.match(ui.document.getElementById("turn-initiative-1").textContent,/主动发起/);
     assert.match(ui.document.getElementById("turn-initiative-1").textContent,/我想到一个具体建议。/);
-    assert.match(ui.document.getElementById("recent-messages").textContent,/主动.*我想到一个具体建议/);
+    assert.equal(ui.document.getElementById("recent-messages"),null);
   }finally{ui.close();}
 });
 
@@ -435,4 +440,52 @@ test("autonomous failure and silence expose the persisted reason",async()=>{
     await ui.poll();
     await until(()=>ui.document.getElementById("initiative-detail").textContent.includes("暂不重复"));
   }finally{ui.close();}
+});
+
+
+test("single chat has no session list",async()=>{
+ const ui=await fixture();try{assert.equal(ui.document.querySelector('.recent-section'),null);assert.ok(ui.document.getElementById('load-older'));}finally{ui.close();}
+});
+test("failed older page preserves loaded messages and draft",async()=>{
+ const ui=await fixture();try{
+  ui.send('retain this');await until(()=>!ui.textarea.disabled&&ui.textarea.value==='');
+  ui.textarea.value='unsent draft';
+  const fetch=ui.window.fetch;ui.window.fetch=async(path,options)=>{if(String(path).includes('before='))throw new Error('offline');return fetch(path,options);};
+  ui.document.getElementById('load-older').hidden=false;ui.document.getElementById('load-older').click();
+  await until(()=>ui.document.getElementById('history-feedback').textContent.includes('重试'));
+  assert.equal(ui.document.querySelectorAll('.message-turn').length,1);assert.equal(ui.textarea.value,'unsent draft');
+ }finally{ui.close();}
+});
+test("task card updates in place and archive inspection preserves draft",async()=>{
+ const ui=await fixture();try{
+  ui.server.timeline=[{id:'task:g',seq:1,revision:1,kind:'task',body:{goal_id:'g',activity_id:'a',objective:'Read report',status:'active',result:''}}];
+  await ui.poll();await until(()=>ui.document.querySelector('[data-key="task:g"]'));
+  ui.server.timeline[0]={...ui.server.timeline[0],revision:2,body:{...ui.server.timeline[0].body,status:'completed',result:'Verified result'}};
+  await ui.poll();await until(()=>ui.document.querySelector('[data-key="task:g"]').textContent.includes('Verified result'));
+  assert.equal(ui.document.querySelectorAll('[data-key="task:g"]').length,1);
+  ui.textarea.value='keep my draft';ui.document.querySelector('[data-view="memory"]').click();
+  await until(()=>ui.document.getElementById('archive-status').textContent.includes('L0'));
+  ui.document.querySelector('[data-view="chat"]').click();await new Promise(resolve=>setTimeout(resolve,30));assert.equal(ui.textarea.value,'keep my draft');
+ }finally{ui.close();}
+});
+
+test("pagination with live append preserves older messages and newer card revisions",async()=>{
+ const ui=await fixture();try{
+  const fetch=ui.window.fetch;let latest=true;
+  const row=(seq,revision=1)=>({id:`chat:e${seq}`,seq,revision,kind:'chat',body:{event_id:`e${seq}`,input:`question ${seq}`,text:`reply ${revision}`,choice:'owner_served'}});
+  ui.window.fetch=async(path,options)=>{
+   if(String(path).startsWith('/api/timeline')){
+    let page;
+    if(String(path).includes('before='))page={items:[row(1),row(2)],has_more:false,next_before:1,change_cursor:99};
+    else page={items:latest?[row(3),row(4)]:[row(4,2),row(5)],has_more:false,next_before:3,change_cursor:latest?4:6};
+    latest=false;return {ok:true,json:async()=>page};
+   }return fetch(path,options);
+  };
+  await ui.poll();await until(()=>ui.document.getElementById('turn-e4'));
+  ui.document.getElementById('load-older').hidden=false;ui.document.getElementById('load-older').click();
+  await until(()=>ui.document.getElementById('turn-e1'));
+  await ui.poll();await until(()=>ui.document.getElementById('turn-e5'));
+  assert.equal(ui.document.querySelectorAll('.message-turn').length,5);
+  assert.match(ui.document.getElementById('turn-e4').textContent,/reply 2/);
+ }finally{ui.close();}
 });
