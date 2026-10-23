@@ -495,3 +495,22 @@ async def test_full_background_queue_returns_truthful_owner_feedback(tmp_path):
         assert reply["text"] != "Queued."
         assert "队列已满" in reply["text"]
         assert len(soul.store.all("goal")) == 8
+
+
+async def test_stale_owner_decision_cannot_cancel_a_background_goal(tmp_path):
+    async with SoulService(Settings(data_dir=tmp_path)) as soul:
+        goal = Goal(lane="background", objective="Keep the current authorized task")
+        soul.store.save_goal(goal)
+        event = Event(
+            source="local-owner",
+            content="old stop",
+            trust="owner_command",
+            dedup_key="stale-owner-stop",
+        )
+        soul.store.interrupt()
+        soul.activities.enqueue(
+            ActivityDecision(activity=Activity.CHAT, goal_id=goal.id, continuation="abandon"),
+            0,
+            event,
+        )
+        assert soul.store.goal(goal.id).status == "pending"

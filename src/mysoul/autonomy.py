@@ -21,6 +21,8 @@ class ActivityRouter:
 
     def enqueue(self, decision, epoch, event):
         soul = self.soul
+        if soul.store.load_subject().dispatch_epoch != epoch:
+            return
         if (event.trust == "owner_command" and decision.goal_id
                 and decision.continuation == "abandon"):
             goal = soul.store.get("goal", decision.goal_id)
@@ -35,8 +37,6 @@ class ActivityRouter:
             )
             return None if queued else "background_queue_full"
         if decision.activity not in {Activity.WORK, Activity.NEWS, Activity.REFLECT}:
-            return
-        if soul.store.load_subject().dispatch_epoch != epoch:
             return
         if decision.activity == Activity.WORK:
             if event.trust != "owner_command":
