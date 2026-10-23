@@ -239,3 +239,42 @@ To recover a bad automatic persona change, prefer a history rollback. For storag
 recovery, restore the stopped full-directory backup into a different directory and
 inspect versions and pending runs before switching daily use to it. Do not delete or
 hand-edit coverage, operation receipts, or unknown external-effect records.
+
+
+## Unified chat and archive recovery
+
+The main chat displays one conversation. “加载更早消息” reads50 older originals;
+new messages and edits merge by stable identity/revision. Task execution, cancellation
+and resume keep their existing card. The memory page's “分层历史” shows active
+levels, compression receipts and paginated original evidence beneath each summary.
+“压缩 / 重试” queues one bounded eligible batch; it does not override recency,
+fatigue, admission or scope. Below all thresholds it correctly reports no work.
+
+Defaults: L0 trigger100/batch70/protected8; upper trigger4/batch3, ceilingL8;
+high/low capacity75%/55%; L1 cap4000 characters and higher levels6000.
+Actual admitted batches can be smaller to fit request framing. Existing source records,
+raw messages, archive children and retired versions remain in SQLite. Recap clear
+invalidates saved publication while preserving historical originals. It does not erase
+chat. A source correction invalidates affected ancestors and rebuilds raw frontier.
+
+On failure inspect `/api/archives` or the memory page. A failed run retains its source
+plan and retries after3/6/12/24/48/60 minutes; manual retry bypasses backoff. An owner
+input, policy edit or Recap clear supersedes stale work. A crash after model generation
+resumes the persisted result without another model call. Never hand-edit child links,
+coverage, epoch or receipts. Use the stopped full-directory backup for recovery in a
+separate directory; one subject lease prevents simultaneous writers.
+
+Before activation on2026-10-23, the complete `.local/ui-redesign` directory was copied
+while stopped to `.local/backups/unified-history-20261023-113750/ui-redesign` (17 files).
+It contains the application SQLite database, LangGraph checkpoints, credentials and
+local work products. Keep this local; do not add it to Git. Run the normal8767 command
+above after restoring into an inspected separate directory. The migration is additive;
+rolling back code alone is not a data restoration procedure.
+
+
+The reviewed activation also has a newer full backup at
+`.local/backups/unified-reviewed-20261023-115019/ui-redesign` with verified database
+hash. Prefer this newer snapshot for post-migration recovery. The preserved original
+pre-migration backup remains available separately. Detailed old facts can be recalled
+through the existing Memory adapter and bounded source excerpts; the model does not
+receive an entire archive's originals for one detail query.

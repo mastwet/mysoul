@@ -167,3 +167,25 @@ Private notes use the memory outbox but do not recursively become consolidation 
 **Operational defaults:** 16000-character source windows; eight complete recent turns;
 retry intervals 3/6/12/24/48/60 minutes, capped at 60. Local-test auth and budget settings
 remain as explicitly selected by the owner. No QQ sending or new execution permissions.
+
+
+## Unified owner history and hierarchical context (2026-10-23)
+
+- One permanent owner timeline is the visible conversation authority. Owner requests,
+  initiative and task cards share stable sequence IDs; a separate change cursor polls
+  edits. Raw records remain intact and older pages are independent of new appends.
+- Additive SQLite migration002 projects existing history once under the subject lease.
+  Task cards update in place; group conversation sources never enter the owner stream.
+- Context reads a scoped, non-overlapping L0..L8 frontier. Default100 complete units
+  fold the oldest70; recent8 stay original. Four same-level nodes fold the oldest3;
+  level8 can compact within level8. Capacity pressure begins at75%, drains to55%.
+- Oversized originals use exact durable fragments; originals retire only after complete
+  coverage. Generated summaries must be nonempty, complete, tool-free and shorter than
+  their admitted input. Frozen child hashes/revisions, epoch, policy and Recap clear
+  epoch guard atomic publication. Failed runs preserve the old frontier.
+- Archive nodes and receipts reuse typed objects storage. This avoids extra schema
+  coupling; very large histories may require dedicated indexed tables later. This
+  release makes no large-history performance claim.
+- Compression shares subject admission, budgets and owner preemption. Saved results
+  recover without a second inference; retry backoff is3/6/12/24/48/60 minutes.
+  Summaries do not create new cognitive evidence or recursive persona learning.

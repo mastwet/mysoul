@@ -370,3 +370,74 @@ failed. Skipped or failed external checks are not counted as passing full v0.1.
   gateway remain recorded failures; provider latency is variable. No deterministic
   schema rejection was reproduced. The live automatic-message path is now accepted
   for these two observed rounds, without promising a message on every future check.
+
+
+### Unified conversation and hierarchical compression (2026-10-23)
+
+- Deterministic timeline/archive/compression tests cover100->70,4->3, maximum-level
+  root folding, exact oversized fragments, atomic rollback, mutable task sources,
+  epoch/Recap races, persisted-result restart, high/low capacity hysteresis and group
+  exclusion. The end-to-end flow joins owner chat, natural initiative, real workspace
+  write/read verification, cancellation, L1/L2, restart, non-overlap and raw expansion;
+  compression creates no new cognitive source or persona version.
+- UI/API tests cover stable pagination during live append, stale revision responses,
+  task card edits, failed older fetch preserving messages/draft, no session list,
+  owner-only archive inspection and existing Host/Origin/CSRF/operator protections.
+- Browser fixture8768 with150 original turns: newest50 ->100 on older load; draft
+  retained. L1 inspection returned50 original records; task result and proactive reply
+  rendered in one chat. Desktop1280x720 and same-origin fixture390x680 checked;
+  narrow chat retains fatigue card, menu and composer with task text wrapping. Only
+  the disposable wrapper allows same-origin framing; production still denies frames.
+- Real configured gemini-3.8-flash-high via localhost8045 compressed synthetic public
+  plant facts, published one archive receipt: **completed, one call,9.98 seconds,
+  203 summary characters**. No actual owner history was used for that provider test.
+  Sanitized local report: `.local/unified-provider-fixture/result.json`.
+- Actual8767 service was stopped, full-directory backed up (17 files), migrated and
+  restarted in existing local-test mode. **62 unique timeline items:60 chats/2 tasks**,
+  complete paginated enumeration. Model,131072-character budget,240-second timeout,
+  unlimited aggregate budgets and three-minute initiative remain configured. Actual
+  history is below current compression triggers; no live archive receipt is claimed.
+- MemPalace, authorized QQ send and isolation gates remain independent external
+  acceptance items. Their skips do not certify complete v0.1. Local offline closure
+  plus this observed provider compression is the scope of this feature acceptance.
+
+
+Final independent review and fixes:
+
+- One fresh read-only reviewer inspected144ae85..be70d1f. Eight Important findings,
+  no Critical/minor findings. Each was reproduced before fixing: blocked eligible
+  runs after unfinished items, actual serialized pressure measurement, dialogue/archive
+  overlap after many tasks, lossy-summary detail recall, unfinished input restart,
+  busy task-card status, concurrent prepend anchors, and explicit-zero change cursors.
+- All eight were fixed in one pass and covered by integration/UI regressions.
+  An additional combined scope fixture exposed private archive metadata in the frontier;
+  strict scope filtering was reproduced RED and fixed GREEN too. Unfinished leaves do
+  not count toward the100-complete-unit trigger. Query details carry immutable leaf,
+  role and [start,end,total] coordinates, max500 original characters per hit, admitted
+  only into remaining context budget. Archive search/get reuse the Memory boundary;
+  no summary or query excerpt becomes a new persona source.
+- Final **274 Python passed,8 external skips;34 UI passed**. Ruff, JS syntax,
+  offline source/wheel build and git whitespace checks all passed on final code.
+  No second review substituted for these covering regressions. No deferred minors.
+- Actual browser after migration: newest50 ->63 unique cards on older load; no session
+  list,45 proactive labels in the initially loaded page, one task card visible, no
+  console errors. At11:37:57 local, a natural initiative began and published1257
+  characters with empty owner input. No artificial history entered actual chat.
+- Final reviewed code restarted after another complete stopped backup:
+  `.local/backups/unified-reviewed-20261023-115019/ui-redesign`; application database
+  SHA256 matched the source copy. Service healthy with65 active original leaves at
+  that check. No actual archive run is claimed below threshold. Final screenshot
+  `C:/Users/Administrator/Desktop/mysoul/.local/unified-chat-acceptance.png` shows
+  the disposable fixture, including task and proactive reply in one conversation.
+
+Review rulings retained after scratch-ledger cleanup:
+
+- Typed-object enumeration performance is accepted without a production-size benchmark;
+  if it becomes slow, dedicated indexed archive tables are future work.
+- Live migration/provider/docs were outside the review range; completed backup,
+  runtime and browser evidence above is the acceptance authority. If recovery fails,
+  restore the stopped full-directory backup and repeat acceptance.
+- MemPalace/QQ/isolation remain external gates. Treating local acceptance as fullv0.1
+  would leave those integrations unproven; this delivery makes no such certification.
+- The known test line-length issue is resolved by a clean Ruff run; it is not an
+  outstanding functional defect. New changes must rerun the static gate.
