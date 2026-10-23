@@ -88,7 +88,10 @@ BACKGROUND_TOOLS = {"memory_search", "memory_get", "read_news"}
 
 class ActivityDecision(Contract):
     activity: Activity
-    rationale: str = Field(default="", max_length=1000)
+    rationale: str = Field(
+        default="", max_length=1000,
+        description="Brief high-level reason for the chosen action; no private reasoning steps.",
+    )
     goal_id: str | None = None
     continuation: Literal["continue", "replan", "abandon"] | None = None
     rest_until: AwareDatetime | None = None

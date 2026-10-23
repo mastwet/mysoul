@@ -242,6 +242,12 @@ class Executor:
                     if result["action_id"] not in latest.effect_ids:
                         latest.effect_ids.append(result["action_id"])
                     if result["outcome"] != "confirmed":
+                        from mysoul.inner_voice import VoiceJournal
+
+                        VoiceJournal(self.store).record_step(
+                            latest, StepDecision.model_validate(output["decision"]), result,
+                            step=latest.cursor + 1,
+                        )
                         self.store.save_activity(latest)
                         return self._finish(latest, "suspended", reason="uncertain")
                     from mysoul.domain import Evidence
@@ -273,6 +279,11 @@ class Executor:
                 latest.cursor += 1
                 latest.checkpoint_ref = activity.id
                 self.store.save_activity(latest)
+                from mysoul.inner_voice import VoiceJournal
+
+                VoiceJournal(self.store).record_step(
+                    latest, StepDecision.model_validate(output["decision"]), result
+                )
                 if latest.status != "active" or goal.status in TERMINAL:
                     return latest
                 if output["decision"]["done"]:

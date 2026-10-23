@@ -3,6 +3,7 @@ import {readFile} from "node:fs/promises";
 import {createRequire} from "node:module";
 import test from "node:test";
 import {JSDOM} from "jsdom";
+import {createInnerVoice} from "../../src/mysoul/web/inner-voice.mjs";
 import {createMessageRenderer,shouldSubmitKey} from "../../src/mysoul/web/conversation.mjs";
 
 import {mergeTimeline,prependScrollAnchor} from "../../src/mysoul/web/timeline.mjs";
@@ -23,6 +24,7 @@ async function fixture(chat,modelRequest,{tokenless=false}={}) {
   server.model={version:0,mode:"replay",url:"",model:"",key_present:false,source:"runtime",output_token_limit:null,token_budget:50000,context_chars:131072,request_timeout:120};
   window.HTMLDialogElement.prototype.showModal=function(){this.open=true;};
   window.HTMLDialogElement.prototype.close=function(){this.open=false;this.dispatchEvent(new window.Event("close"));};
+  window.createInnerVoice=createInnerVoice;
   window.mergeTimeline=mergeTimeline;window.prependScrollAnchor=prependScrollAnchor;window.markdownit=MarkdownIt;window.createMessageRenderer=createMessageRenderer;window.shouldSubmitKey=shouldSubmitKey;
   window.matchMedia=()=>({matches:false,addEventListener(){}});
   window.setInterval=callback=>{pollCallback=callback;return 0;};
@@ -30,6 +32,7 @@ async function fixture(chat,modelRequest,{tokenless=false}={}) {
     let result;
     if(path==="/api/session")result={csrf:"fixture-csrf",auth_required:!tokenless};
     else if(path==="/api/status")result=server;
+    else if(path.startsWith("/api/inner-voice?"))result=server.innerVoice||{items:[],has_more:false,next_before:null};
     else if(path.startsWith('/api/timeline')){
       const items=[...server.interactions.map((body,i)=>({id:`chat:${body.event_id}`,seq:i+1,revision:1,kind:'chat',body})),...(server.timeline||[])];
       result={items,next_before:items[0]?.seq||null,has_more:false,change_cursor:items.length};
@@ -564,5 +567,24 @@ test("quiet background progress is inspectable without adding a chat message",as
     assert.match(f.document.getElementById("jobs").textContent,/已整理第一条观察/);
     assert.equal(f.document.querySelectorAll(".message-turn").length,0);
     assert.match(f.document.getElementById("initiative-detail").textContent,/后台任务/);
+  }finally{f.close();}
+});
+
+
+test("sidebar inner voice opens while preserving the chat draft",async()=>{
+  const f=await fixture();try{
+    f.server.innerVoice={items:[{id:"check:1",category:"initiative",title:"自主检查",time:"2026-10-23T12:00:00Z",summary:"最近已经分享，我先安静一会儿。",status:"silent",details:{epoch:8}}],has_more:false,next_before:null};
+    const voicePaths=f.document.querySelectorAll('[data-view="inner-voice"] svg path');
+    assert.equal(voicePaths.length,2);
+    assert.ok([...voicePaths].every(path=>path.getAttribute("d").startsWith("M")));
+    f.textarea.value="还没发出的聊天草稿";
+    f.document.querySelector('[data-view="inner-voice"]').click();
+    assert.equal(f.document.getElementById("inner-voice").hidden,false);
+    await until(()=>f.document.getElementById("voice-list").textContent.includes("我先安静"));
+    assert.equal(f.document.getElementById("page-title").textContent,"心语");
+    f.document.querySelector('[data-view="chat"]').click();
+    await new Promise(resolve=>f.window.requestAnimationFrame(resolve));
+    assert.equal(f.textarea.value,"还没发出的聊天草稿");
+    assert.equal(f.document.querySelectorAll(".message-turn").length,0);
   }finally{f.close();}
 });

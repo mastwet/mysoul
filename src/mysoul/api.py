@@ -216,6 +216,12 @@ def create_app(settings: Settings | None = None, *, token=None, service=None):
             Path(__file__).parent / "web/conversation.mjs", media_type="text/javascript"
         )
 
+    @app.get("/inner-voice.mjs")
+    async def inner_voice_module():
+        return FileResponse(
+            Path(__file__).parent / "web/inner-voice.mjs", media_type="text/javascript"
+        )
+
     @app.get("/timeline.mjs")
     async def timeline_module():
         return FileResponse(
@@ -231,6 +237,10 @@ def create_app(settings: Settings | None = None, *, token=None, service=None):
     @app.get("/health")
     async def health():
         return {"status": "ok"}
+
+    from mysoul.inner_voice import register_inner_voice_routes
+
+    register_inner_voice_routes(app, authorize)
 
     guard = [Depends(authorize)]
 

@@ -118,6 +118,9 @@ class LifeController:
                 rationale=message,
                 failure=ModelFailure(code=code, message=message),
             )
+        from mysoul.inner_voice import VoiceJournal
+
+        VoiceJournal(self.store).record_decision(events, decision, state.dispatch_epoch)
         if decision.memory_call:
             # Read requests are intermediate decisions, not activity transitions.
             return decision

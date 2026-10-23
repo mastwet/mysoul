@@ -3,6 +3,7 @@
 import "/vendor/markdown-it.min.js";
 import {createMessageRenderer, shouldSubmitKey} from "/conversation.mjs";
 import {mergeTimeline, prependScrollAnchor} from "/timeline.mjs";
+import {createInnerVoice} from "/inner-voice.mjs";
 
 const renderMarkdown=createMessageRenderer(globalThis.markdownit);
 
@@ -21,6 +22,7 @@ const personaNames = {
 };
 const statusNames = {pending:"等待中", active:"进行中", suspended:"已暂停", completed:"已完成", failed:"失败", cancelled:"已取消", abandoned:"已放弃", confirmed:"已确认", unknown:"结果未知", not_sent:"未发送", in_flight:"进行中", draft:"草稿", proposed:"待测试", tested:"已测试", rejected:"已拒绝", active_skill:"已启用"};
 const paths = {
+  voice:["M5 5h14v10H9l-4 4V5Z","M8 9h8M8 12h5"],
   chat:["M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6A8.4 8.4 0 0 1 12.5 3h.5a8.5 8.5 0 0 1 8 8v.5Z"],
   tasks:["M9 5h10a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h1", "m8 3-2 2 2 2", "M8 12h9M8 16h6"],
   memory:["M12 7v14M3 3h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5v16h-5a4 4 0 0 0-4 2 4 4 0 0 0-4-2H3Z"],
@@ -65,6 +67,7 @@ let csrf="", snapshot=null, skillData=null, recapBase=null, activeView="chat";
 let refreshPromise=null, pendingChat=null, chatSignature="", lifeDirty=false, loadedChat=false;
 let timelineItems=[], timelineCursor=0, olderCursor=null, historyReady=false, historyLoading=false;
 let archiveState=null;
+const innerVoice=createInnerVoice({document,api});
 let modelDirty=false, modelVersion=0, personaEditVersion=0;
 let cognitionDirty=false,cognitionEditVersion=0;
 const busyScopes=new Set(), signatures=new WeakMap();
@@ -164,11 +167,12 @@ document.addEventListener("keydown",event=>{
   }
 });
 function setView(view) {
-  if(!["chat","tasks","memory","persona","skills"].includes(view))return;
+  if(!["chat","inner-voice","tasks","memory","persona","skills"].includes(view))return;
   activeView=view;
   document.querySelectorAll(".view").forEach(el=>el.hidden=el.id!==view);
   document.querySelectorAll("[data-view]").forEach(el=>{el.classList.toggle("active",el.dataset.view===view);if(el.dataset.view===view)el.setAttribute("aria-current","page");else el.removeAttribute("aria-current");});
-  const title={chat:"mysoul",tasks:"任务",memory:"记忆",persona:"人格",skills:"技能"}[view];
+  innerVoice.setActive(view==="inner-voice");
+  const title={chat:"mysoul","inner-voice":"心语",tasks:"任务",memory:"记忆",persona:"人格",skills:"技能"}[view];
   $("page-title").textContent=title;document.title=`mysoul · ${view==="chat"?"对话":title}`;
   if(mobile.matches){mobileSidebar=false;syncSidebar();}
   if(view==="chat")requestAnimationFrame(()=>$("chat-text").focus());
@@ -226,6 +230,8 @@ async function refresh() {
       if(requestedView==="memory"){
         const [evidence,history,personaHistory,archives]=await Promise.all([api("evidence"),api("recap/history"),api("persona/history"),api("archives")]);
         if(activeView===requestedView){renderEvidence(evidence);renderHistory(history);renderPersonaHistory(personaHistory);renderMemoryStatus();renderArchives(archives);}
+      }else if(requestedView==="inner-voice"){
+        await innerVoice.refresh();
       }else if(requestedView==="persona"){
         await loadPersonaHistory();
       }else if(requestedView==="skills"){

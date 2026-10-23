@@ -598,3 +598,14 @@ Review rulings retained after scratch-ledger cleanup:
 - 激活后自然心跳 21:11:56–21:12:06：outcome=silent、publication_status=silent，因近期连续分享而选择安静，无新增聊天消息；无需强制触发真实私有诊断。
 
 - 最终 epoch 防护版本再次停止备份并重启：`.local/backups/initiative-task-lanes-final-20261023-211649/ui-redesign`；校验记录 `.local/initiative-final-backup.json`。重启后 MemPalace connected、中文索引查询仍返回2条，自主开启且周期3分钟。
+
+
+## 2026-10-23：心语侧栏与决策日志
+
+- 新增只读心语入口：自主检查、对话决策、任务进度、记忆整理按时间倒序展示，支持类型筛选、实时刷新、展开详情与分页。只保存模型主动返回的简短决策说明和执行状态，不读取隐藏推理或复制输入、回复及工具原文。
+- 查看页面不会增加模型调用、长期记忆检索、归档记录或人格演化来源。旧自主检查直接可见；旧对话和任务不补写解释。
+- RED/GREEN：接口授权、输出投影、同时间游标、范围隔离、任务失败；UI 失败重试、异步切换、分页突发、保留详情/选中文字/聊天草稿。独立审查的两项 P2 已修复：失败步骤覆盖旧进度、长时间离开后漏载中间记录。筛选回退及图标缺陷同样复现后修复。
+- 最终离线：354 passed / 10 skipped；UI：52 passed；Ruff、JS syntax、diff check 与 uv offline build 通过。外部跳过项不计通过。
+- 激活前停止服务并完整备份到 `.local/backups/inner-voice-20261023-214439/ui-redesign`，含应用库、检查点、配置与索引；校验记录 `.local/inner-voice-backup.json`。8767 已重启，自主开启、3 分钟检查和本机测试设置保留，MemPalace connected、待归档 0。
+- 浏览器验证真实已有的保持安静原因、起止时间、调度轮次、分类筛选和空状态；未发送测试聊天或新增私有历史回放。截图：`C:/Users/Administrator/Desktop/mysoul/.local/inner-voice-20261023.png`。原用户标签页未重载。
+- 其他正在进行的 Recap-only 与原生 MemPalace 浏览器改动留在工作树，不纳入此提交。

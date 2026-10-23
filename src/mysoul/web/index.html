@@ -28,6 +28,7 @@
       <div class="sidebar-top"><a class="brand" href="/">mysoul<span class="brand-dot">.</span></a><button id="sidebar-close" class="icon-button" type="button" aria-label="收起侧栏"></button></div>
       <nav class="main-nav" aria-label="工作区">
         <button class="nav-item active" data-view="chat" type="button" aria-current="page"><span data-icon="chat"></span>对话</button>
+        <button class="nav-item" data-view="inner-voice" type="button"><span data-icon="voice"></span>心语</button>
         <button class="nav-item" data-view="tasks" type="button"><span data-icon="tasks"></span>任务<span id="task-count" class="nav-count" hidden></span></button>
         <button class="nav-item" data-view="memory" type="button"><span data-icon="memory"></span>记忆</button>
         <button class="nav-item" data-view="persona" type="button"><span data-icon="person"></span>人格</button>
@@ -66,6 +67,16 @@
           <p class="composer-note"><span>主人输入优先，随时可以打断当前任务。</span><button id="initiative-status" class="composer-link" type="button">自主发起已开启</button></p>
         </div>
       </main>
+
+      <main id="inner-voice" class="view page-scroll" hidden><div class="page-content voice-content">
+        <div class="page-heading"><div><h1>心语</h1><p>看看它正在做什么，为什么这样选择。</p></div></div>
+        <div class="voice-toolbar"><div><label for="voice-category">记录类型</label><select id="voice-category"><option value="all">全部记录</option><option value="initiative">自主检查</option><option value="conversation">对话决策</option><option value="task">任务进度</option><option value="maintenance">记忆整理</option></select></div><button id="voice-refresh" class="secondary small" type="button">刷新</button></div>
+        <p class="field-note">这里是模型给出的简短决策说明与执行记录，不包含原始内部推理。查看不会调用模型或写入记忆。</p>
+        <p id="voice-feedback" class="field-note" role="status"></p>
+        <p id="voice-empty" class="empty">还没有心语记录。下一次对话或自主检查后，可以在这里查看。</p>
+        <div id="voice-list" aria-label="心语记录"></div>
+        <div class="voice-pagination"><button id="voice-older" class="secondary small" type="button" hidden>加载较早记录</button></div>
+      </div></main>
 
       <main id="tasks" class="view page-scroll" hidden><div class="page-content">
         <div class="page-heading"><div><h1>任务</h1><p>有明确目标的工作，也有随时停下的余地。</p></div></div>
