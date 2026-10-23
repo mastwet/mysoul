@@ -2,7 +2,7 @@ import asyncio
 import json
 from collections.abc import Awaitable, Callable
 
-from mysoul.domain import ToolRequest, ToolResult, now
+from mysoul.domain import BACKGROUND_TOOLS, ToolRequest, ToolResult, now
 from mysoul.memory import READ_ONLY_MEMORY_TOOLS
 from mysoul.storage import Conflict, StateStore
 
@@ -53,6 +53,7 @@ class EffectDispatcher:
                     and goal.status == "active"
                     and not goal.cancelled
                     and (goal.allowed_tools is None or request.tool in goal.allowed_tools)
+                    and (goal.lane != "background" or request.tool in BACKGROUND_TOOLS)
                     and request.deadline > self.clock()
                     and request.tool in self.handlers
                     and request.scope.audience in self.audiences.get(request.tool, set())

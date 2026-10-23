@@ -76,6 +76,16 @@ class MemoryCall(Contract):
     arguments: dict[str, Any] = Field(default_factory=dict)
 
 
+class BackgroundTaskRequest(Contract):
+    objective: str = Field(min_length=1, max_length=2000)
+    completion_criteria: str = Field(
+        default="Produce a concise, evidence-based note.", max_length=1000
+    )
+
+
+BACKGROUND_TOOLS = {"memory_search", "memory_get", "read_news"}
+
+
 class ActivityDecision(Contract):
     activity: Activity
     rationale: str = Field(default="", max_length=1000)
@@ -85,6 +95,7 @@ class ActivityDecision(Contract):
     chat_action: Literal["read", "silent", "reply"] = "silent"
     reply: str = Field(default="", max_length=131072)
     memory_call: MemoryCall | None = None
+    background_task: BackgroundTaskRequest | None = None
 
 
 class ModelFailure(Contract):
@@ -115,6 +126,7 @@ TERMINAL = {"completed", "failed", "cancelled", "abandoned"}
 
 
 class Goal(Contract):
+    lane: Literal["foreground", "background"] = "foreground"
     id: str = Field(default_factory=uid)
     objective: str = Field(min_length=1, max_length=8000)
     completion_criteria: str = "Produce the requested artifact and verify it."
@@ -141,6 +153,8 @@ class ActivityRecord(Contract):
     skill_version: str = "initial"
     effect_ids: list[str] = Field(default_factory=list)
     final_note: str = Field(default="", max_length=64000)
+    progress_note: str = Field(default="", max_length=4000)
+    pause_reason: Literal["", "yield", "owner", "budget", "uncertain", "restart"] = ""
     continuation: Literal["continue", "replan", "abandon"] | None = None
 
 
@@ -211,6 +225,7 @@ class ContextBundle(Contract):
     history: list[ConversationMessage] = Field(default_factory=list)
     archives: list[Evidence] = Field(default_factory=list)
     step_results: list[Evidence] = Field(default_factory=list)
+    runtime_state: dict[str, Any] = Field(default_factory=dict)
     skill: str = ""
     recall_status: str = "available"
 

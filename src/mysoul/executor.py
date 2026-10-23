@@ -11,6 +11,7 @@ from langgraph.graph import END, START, StateGraph
 from mysoul.admission import SubjectAdmission, admitted
 from mysoul.config import Settings
 from mysoul.domain import (
+    BACKGROUND_TOOLS,
     TERMINAL,
     Activity,
     ActivityRecord,
@@ -51,6 +52,7 @@ class Executor:
             record = ActivityRecord.model_validate(item)
             if record.status == "active":
                 record.status = "suspended"
+                record.pause_reason = "restart"
                 self.store.save_activity(record)
                 goal = self.store.goal(record.goal_id)
                 if goal.status not in TERMINAL:
@@ -80,6 +82,8 @@ class Executor:
         specs = self.dispatcher.tool_specs(context.scope.audience)
         if goal.allowed_tools is not None:
             specs = [spec for spec in specs if spec["name"] in goal.allowed_tools]
+        if goal.lane == "background":
+            specs = [spec for spec in specs if spec["name"] in BACKGROUND_TOOLS]
         decision = await asyncio.wait_for(
             self.model.execute_step(
                 context,
@@ -175,6 +179,16 @@ class Executor:
                         self.store.get("activity_context", activity.id)
                     )
                     refresh_recap_context(self.store, context)
+                    if goal.lane == "background":
+                        context.runtime_state["execution_progress"] = {
+                            "cursor": activity.cursor, "note": activity.progress_note,
+                        }
+                        context.instructions += (
+                            "\n[background step] Complete one bounded read-only step. "
+                            "Use retained results and progress; do not repeat confirmed tools. "
+                            "Set done=true only when the completion criteria are met. "
+                            "Your note is internal progress, not a message sent to the owner."
+                        ) if "[background step]" not in context.instructions else ""
                     if len(context.payload()) > self.settings.context_chars:
                         raise ContextOverflow("Refreshed required context exceeds budget")
                     self.store.put("activity_context", activity.id, context.model_dump(mode="json"))
@@ -189,7 +203,7 @@ class Executor:
                         or budget_exceeded(state.tokens_used, reserve, self.settings.token_budget)
                         or budget_exceeded(goal.tokens_used, reserve, goal.token_limit)
                     ):
-                        return self._finish(activity, "suspended")
+                        return self._finish(activity, "suspended", reason="budget")
                     state.model_calls += attempts
                     state.tokens_used += reserve
                     self.store.save_transition(state.dispatch_epoch, state)
@@ -229,7 +243,7 @@ class Executor:
                         latest.effect_ids.append(result["action_id"])
                     if result["outcome"] != "confirmed":
                         self.store.save_activity(latest)
-                        return self._finish(latest, "suspended")
+                        return self._finish(latest, "suspended", reason="uncertain")
                     from mysoul.domain import Evidence
 
                     context = ContextBundle.model_validate(
@@ -253,6 +267,7 @@ class Executor:
                         self.store.save_activity(latest)
                         return self._finish(latest, "suspended")
                     self.store.put("activity_context", activity.id, context.model_dump(mode="json"))
+                latest.progress_note = output["decision"].get("note", "")[:4000]
                 if output["decision"]["done"]:
                     latest.final_note = output["decision"].get("note", "")
                 latest.cursor += 1
@@ -262,8 +277,15 @@ class Executor:
                     return latest
                 if output["decision"]["done"]:
                     return self._finish(latest, "completed")
+                if goal.lane == "background":
+                    return self._finish(latest, "suspended", reason="yield")
         except asyncio.CancelledError:
-            self._finish(self.store.activity(activity_id), "suspended")
+            latest = self.store.activity(activity_id)
+            goal = self.store.goal(latest.goal_id)
+            reason = latest.pause_reason
+            if latest.status == "active" and goal.lane == "background":
+                reason = "restart"
+            self._finish(latest, "suspended", reason=reason)
             raise
         except (Conflict, ContextOverflow):
             self._finish(self.store.activity(activity_id), "suspended")
@@ -277,7 +299,8 @@ class Executor:
             self.store.save_goal(goal)
             self.running = None
 
-    def _finish(self, activity, status):
+    def _finish(self, activity, status, *, reason=""):
+        activity.pause_reason = reason
         goal = self.store.goal(activity.goal_id)
         if goal.status in TERMINAL:
             status = goal.status
@@ -301,7 +324,7 @@ class Executor:
         if state.current_activity_id:
             activity = self.store.activity(state.current_activity_id)
             if activity.status not in TERMINAL:
-                return self._finish(activity, "suspended")
+                return self._finish(activity, "suspended", reason="owner")
         return None
 
     def cancel(self, goal_id):
@@ -338,6 +361,7 @@ class Executor:
         state = self.store.load_subject()
         activity.dispatch_epoch = state.dispatch_epoch
         activity.status = goal.status = "active"
+        activity.pause_reason = ""
         self.store.save_goal(goal)
         self.store.save_activity(activity)
         state.current_activity_id = activity.id

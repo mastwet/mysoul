@@ -256,7 +256,8 @@ async def test_three_minute_heartbeat_repeats_through_ticks_and_restart(tmp_path
         await soul.tick()
         assert len(restarted_model.contexts) == 1
         messages = [i for i in soul.status()["interactions"] if i["choice"] == "initiative"]
-        assert len(messages) == 3
+        assert len(messages) == 1  # Duplicate publications are suppressed; checks still recur.
+        assert len(soul.store.all("initiative_check")) == 3
 
 
 async def test_previously_considered_maintenance_does_not_starve_due_heartbeat(tmp_path):

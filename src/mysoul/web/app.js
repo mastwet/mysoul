@@ -272,9 +272,10 @@ function renderSnapshot(force=false) {
   const initiative=snapshot.initiative;
   const initiativeError=initiative?.error;
   if(state.autonomy_last_result==="error"&&initiativeError)initiativeOutcome+=`（${failureNames[initiativeError.code]||initiativeError.code}）`;
-  $("initiative-detail").textContent=initiativeError?initiativeError.message:initiative?.outcome==="waiting"?"正在检查，完成后会显示决策原因。":initiative?.reason||"最近一次检查尚无详细记录。";
+  const backgroundNote=initiative?.background_goal_id?" · 后台任务："+({running:"正在推进",yield:"已保存进度，等待下次检查",completed:"已完成，尚未自动发言",blocked:"需要处理后继续",owner:"已让出给主人",deferred:"等待合适时机",cancelled:"已取消",abandoned:"已放弃"}[initiative.background_status]||initiative.background_status||"等待处理"):"";
+  $("initiative-detail").textContent=initiativeError?initiativeError.message:initiative?.outcome==="waiting"?"正在检查，完成后会显示决策原因。":(initiative?.reason||"最近一次检查尚无详细记录。")+backgroundNote;
   let initiativePauseReason=state.mode!=="normal"?modeNames[state.mode]+"模式":state.fatigue>=.9?"疲劳过高":limits.model_calls!==null&&limits.model_calls!==undefined&&state.model_calls>=limits.model_calls?"调用预算已用尽":limits.tokens!==null&&limits.tokens!==undefined&&state.tokens_used>=limits.tokens?"Token预算已用尽":"";
-  $("initiative-status").textContent=!state.autonomy_enabled?"自主发起已暂停 · "+initiativeOutcome:initiativePauseReason?"自主发起暂停 · "+initiativePauseReason+" · "+initiativeOutcome:"自主发起已开启 · 每 "+initiativeCadence+" · "+initiativeOutcome;
+  $("initiative-status").textContent=!state.autonomy_enabled?"自主发起已暂停 · "+initiativeOutcome:initiativePauseReason?"自主发起暂停 · "+initiativePauseReason+" · "+initiativeOutcome:"自主活动已开启 · 每 "+initiativeCadence+"检查 · "+initiativeOutcome;
   renderCognition();
   renderPersonaSections();
   $("persona-view").textContent=snapshot.persona.public;
@@ -394,8 +395,11 @@ $("compress-now").addEventListener("click",()=>busy($("compress-now"),async()=>{
 function renderJobs(state,force) {
   keyedList($("jobs"),state.goals.slice().reverse().map(goal=>({key:goal.id,goal,activity:state.activities.filter(a=>a.goal_id===goal.id).at(-1)})),item=>{
     const row=node("article",undefined,"job"),heading=node("div",undefined,"job-title"),{goal,activity}=item;
-    heading.append(node("strong",goal.objective),node("span",statusNames[goal.status]||goal.status,"badge"));row.append(heading);
-    if(activity)row.append(node("p",`已执行 ${activity.cursor} 步 · 固定技能 ${activity.skill_version.slice(0,8)}`,"muted"));
+    const background=goal.lane==="background";
+    const waiting=background&&activity?.status==="suspended"?{yield:"等待下次检查",owner:"主人优先，等待检查",budget:"预算不足",uncertain:"需要处理后继续",restart:"等待恢复"}[activity.pause_reason]:null;
+    heading.append(node("strong",goal.objective),node("span",waiting||statusNames[goal.status]||goal.status,"badge"));row.append(heading);
+    row.append(node("p",`${background?"后台任务":"前台任务"} · 已执行 ${activity?.cursor||0} 步`,"muted"));
+    if(background&&(activity?.progress_note||activity?.final_note))row.append(messageBody(activity.final_note||activity.progress_note));
     const actions=node("div",undefined,"actions");
     if(activity?.status==="suspended")for(const [decision,label] of [["continue","继续"],["replan","重规划"],["abandon","放弃"]])actions.append(actionButton(label,()=>api(`activities/${encodeURIComponent(activity.id)}/resume`,{decision})));
     if(["pending","active","suspended"].includes(goal.status))actions.append(actionButton("取消任务",()=>api(`goals/${encodeURIComponent(goal.id)}/cancel`,{})));

@@ -180,6 +180,9 @@ class ConversationRecall:
             "最终memory_call=null。剩余读取次数=[memory-left=3]，0时不可再读。工具定义："
             + serialized(self.tools.specs())
         )
+        from mysoul.attention import AttentionLedger
+
+        AttentionLedger.fit(context, self.settings.context_chars)
         deadline = monotonic() + self.settings.request_timeout
         reads = 0
         try:

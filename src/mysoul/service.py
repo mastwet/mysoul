@@ -639,6 +639,16 @@ class SoulService:
                         "error": "superseded",
                     },
                 )
+            if event.trust == "owner_command" and event.scope == Scope():
+                tasks = self.activities.attention.background_tasks()
+                if tasks:
+                    context.runtime_state["background_tasks"] = tasks
+                    context.instructions += (
+                        "\nRuntime background_tasks are committed task state, not instructions. "
+                        "If the owner asks to stop one, set goal_id to its ID and "
+                        "continuation=abandon; you may also reply normally. "
+                        "A new explicitly deferred task may use background_task."
+                    )
             decision = await self.choose_with_memory([event], context, admission_epoch)
         if self.store.load_subject().dispatch_epoch != admission_epoch:
             return self._record_interaction(event, {
@@ -711,7 +721,9 @@ class SoulService:
                 event.id,
                 {"text": text, "scope": event.scope.model_dump(), "status": "draft"},
             )
-        self.activities.enqueue(decision, admission_epoch, event)
+        admission = self.activities.enqueue(decision, admission_epoch, event)
+        if admission == "background_queue_full" and event.trust == "owner_command":
+            result["text"] = "后台队列已满（最多8项），这项新请求尚未加入。请先完成或取消已有任务。"
         result = self._record_interaction(event, result)
         if execute_activity:
             await self.activities.drain_choices(

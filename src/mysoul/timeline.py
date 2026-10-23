@@ -83,6 +83,8 @@ class TimelineStore:
 
     @classmethod
     def task_in(cls, db, goal, activity):
+        if goal.lane == "background":
+            return  # Quiet work is inspectable in Tasks; publication is a separate decision.
         context = db.execute(
             "SELECT body FROM objects WHERE kind='activity_context' AND id=?", (activity.id,)
         ).fetchone()

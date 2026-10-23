@@ -96,7 +96,7 @@ test("main chat shows initiative state and persists its cadence controls",async(
   const ui=await fixture();
   try{
     const d=ui.document;
-    assert.match(d.getElementById("initiative-status").textContent,/自主发起已开启/);
+    assert.match(d.getElementById("initiative-status").textContent,/自主活动已开启/);
     d.getElementById("open-settings").click();
     d.querySelector('[data-setting="life"]').click();
     assert.ok(d.getElementById("autonomy-enabled"));
@@ -381,7 +381,7 @@ test("tokenless local test opens directly and unlimited calls do not pause initi
     ui.server.state.model_calls=1000;ui.server.limits.model_calls=null;
     ui.server.persona.version++;
     await ui.poll();
-    assert.match(ui.document.getElementById("initiative-status").textContent,/自主发起已开启/);
+    assert.match(ui.document.getElementById("initiative-status").textContent,/自主活动已开启/);
     assert.match(ui.document.getElementById("budget-calls").textContent,/不限/);
     ui.send("免令牌测试");
     await until(()=>!ui.textarea.disabled);
@@ -546,4 +546,23 @@ test("short and long memory tabs preserve the chat draft and show the chosen pan
   ui.document.getElementById('memory-tab-short').click();assert.equal(ui.document.getElementById('short-term-memory').hidden,false);
   assert.equal(ui.textarea.value,'仍然保留的聊天草稿');await new Promise(r=>setTimeout(r,30));
  }finally{ui.close();}
+});
+
+
+test("quiet background progress is inspectable without adding a chat message",async()=>{
+  const f=await fixture();
+  try{
+    f.server.goals=[{id:"bg1",objective:"探索鸟喙结构",lane:"background",status:"suspended"}];
+    f.server.activities=[{id:"a1",goal_id:"bg1",status:"suspended",cursor:1,pause_reason:"yield",progress_note:"已整理第一条观察",skill_version:"initial"}];
+    f.server.initiative={outcome:"silent",reason:"继续整理，不打扰主人",background_goal_id:"bg1",background_status:"yield"};
+    f.server.state.autonomy_last_result="silent";
+    await f.poll();
+    f.document.querySelector('[data-view="tasks"]').click();
+    await until(()=>f.document.getElementById("jobs").textContent.includes("后台任务"));
+    assert.match(f.document.getElementById("jobs").textContent,/后台任务/);
+    assert.match(f.document.getElementById("jobs").textContent,/等待下次检查/);
+    assert.match(f.document.getElementById("jobs").textContent,/已整理第一条观察/);
+    assert.equal(f.document.querySelectorAll(".message-turn").length,0);
+    assert.match(f.document.getElementById("initiative-detail").textContent,/后台任务/);
+  }finally{f.close();}
 });
