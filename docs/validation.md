@@ -349,3 +349,24 @@ failed. Skipped or failed external checks are not counted as passing full v0.1.
   speech is **not accepted as fixed**. The next scheduled check remains enabled.
   Exact private-context diagnostic replay awaits explicit authorization after the
   automatic approval rejection; no such replay has been executed.
+
+### Main-chat initiative live acceptance after recovery (2026-10-23, Asia/Shanghai)
+
+- Two successive natural checks published actual assistant messages without any new
+  owner event: 09:16:27 -> **09:18:16**, 1721 characters, and 09:19:28 -> **09:20:28**.
+  Both receipts are `outcome=message`, both interactions have `choice=initiative`
+  and empty owner input. The provider continued the still-authorized fiction request;
+  no synthetic fixture reply was inserted into the real conversation. Browser verified
+  the proactive label and sidebar entry, with no console errors. Screenshot:
+  `C:/Users/Administrator/Desktop/mysoul/.local/initiative-real-success.png`.
+- Owner subsequently explicitly authorized private-context diagnostic replay to the
+  configured localhost:8045 gateway and its upstream. One isolated snapshot replay
+  used **16644 context characters** and the unchanged gemini-3.8-flash-high provider.
+  It returned **HTTP 200 after 54.83 seconds**, schema-valid `read_chat/reply`, 164
+  reply characters, no error. It published only into the isolated fixture database.
+  Sanitized report: `.local/initiative-authorized-replay-20261023/diagnostic-result.json`.
+- The exact-context replay supplies evidence that the current structured-output
+  contract and payload are accepted. Prior 120/240-second timeouts and the stopped
+  gateway remain recorded failures; provider latency is variable. No deterministic
+  schema rejection was reproduced. The live automatic-message path is now accepted
+  for these two observed rounds, without promising a message on every future check.
