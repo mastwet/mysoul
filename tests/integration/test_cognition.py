@@ -147,7 +147,12 @@ async def test_failure_retains_context_and_backoff_survives_restart(tmp_path):
         assert failed.attempts == 1
         assert await soul.cognition.run_due() is None
         assert soul.model.calls == 1
-        assert "不可丢失的完整约定" in (await soul.context(Scope())).payload()
+        assert "不可丢失的完整约定" not in (await soul.context(Scope())).payload()
+        recovered = await soul.memory_tools.call("memory_get", {
+            "ref": "experience:seed:user"
+        }, Scope())
+        assert "不可丢失的完整约定" in recovered["text"]
+        assert soul.cognition.sources.pending_window(16000) is not None
     async with SoulService(Settings(data_dir=tmp_path), ReplayModel()) as soul:
         assert await soul.cognition.run_due() is None
         result = await soul.cognition.run_due(force=True)

@@ -114,6 +114,9 @@ class LifeController:
                 rationale=message,
                 failure=ModelFailure(code=code, message=message),
             )
+        if decision.memory_call:
+            # Read requests are intermediate decisions, not activity transitions.
+            return decision
         if owner and decision.chat_action == "reply" and decision.reply:
             # A complete chat response is already the work for this turn. Do not
             # also launch a second, model-selected background task from the same text.

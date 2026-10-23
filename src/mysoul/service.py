@@ -119,6 +119,13 @@ class SoulService:
         self.lease = SubjectLease(settings.data_dir / "subject.lock")
         self.admission = self.executor.admission
         self.phone_cursor = (self.store.get("cursor", "phone") or {}).get("value")
+        from mysoul.recall import ConversationRecall, MemoryTools
+
+        self.memory_tools = MemoryTools(lambda: self.memory)
+        self.recall = ConversationRecall(self.life, self.memory_tools, self.store, settings)
+        for spec in self.memory_tools.specs():
+            self.effects.register(spec["name"], self._memory_read,
+                                  {"owner", "group", "public"}, schema=spec["parameters"])
         self.memory_process = None
         self.owner_turns = 0
         from mysoul.autonomy import ActivityRouter
@@ -225,7 +232,7 @@ class SoulService:
             context = await self.context(group[0].scope, "\n".join(e.content for e in group))
             if self.store.load_subject().dispatch_epoch != epoch:
                 return
-            decision = await self.life.choose(group, context)
+            decision = await self.choose_with_memory(group, context, epoch)
             for event in group:
                 selected = (
                     decision
@@ -384,6 +391,36 @@ class SoulService:
             "recall_status": bundle.recall_status,
         }
         return bundle
+
+    async def choose_with_memory(self, events, context, epoch, current=None):
+        decision = await self.recall.choose(events, context, epoch, current)
+        if self.store.load_subject().dispatch_epoch == epoch:
+            self.context_metrics = {
+                "payload_chars": len(context.payload()),
+                "budget_chars": self.settings.context_chars,
+                "history_messages": len(context.history), "memory_results": self.recall.last_reads,
+                "recap_version": context.recap_version, "recall_status": context.recall_status,
+            }
+        return decision
+
+    async def _memory_read(self, request):
+        from mysoul.domain import ContextBundle
+        from mysoul.recall import admit_result
+        from mysoul.storage import Conflict
+
+        context = ContextBundle.model_validate(
+            self.store.get("activity_context", request.activity_id)
+        )
+        result = await self.memory_tools.call(request.tool, request.arguments, request.scope)
+        goal = self.store.goal(request.goal_id)
+        if (self.store.load_subject().dispatch_epoch != request.epoch
+                or goal.cancelled or goal.status != "active"):
+            return ToolResult(action_id=request.action_id, outcome="not_sent", error="Superseded")
+        evidence = admit_result(context, result, request.tool, "recall:" + request.action_id,
+                                self.settings.context_chars)
+        if evidence is None:
+            raise Conflict("Memory result envelope exceeds remaining context budget")
+        return ToolResult(action_id=request.action_id, outcome="confirmed", content=evidence.text)
 
     def dialogue_history(self, scope):
         import json
@@ -599,7 +636,12 @@ class SoulService:
                         "error": "superseded",
                     },
                 )
-            decision = await self.life.choose([event], context)
+            decision = await self.choose_with_memory([event], context, admission_epoch)
+        if self.store.load_subject().dispatch_epoch != admission_epoch:
+            return self._record_interaction(event, {
+                "choice": "silent", "event_id": event.id, "activity": "rest", "text": "",
+                "input": event.content, "error": "superseded",
+            })
         if event.trust == "owner_command":
             choice = "owner_served"
         elif (

@@ -77,7 +77,8 @@ class ActivityRouter:
             if not context or context["scope"]["audience"] != "owner":
                 continue
             goal = soul.store.goal(activity["goal_id"])
-            effects = soul.store.effects_for_goal(goal.id)
+            effects = [(req, res) for req, res in soul.store.effects_for_goal(goal.id)
+                       if req.tool not in {"memory_search", "memory_get"}]
             # A plain owner interruption has no failure to learn from.
             learn = activity["status"] == "failed" or any(
                 result.outcome != "confirmed" for _, result in effects
@@ -245,13 +246,16 @@ class ActivityRouter:
                     "兴趣相关的具体内容，写成自然简短的消息。避免重复刚说过的内容或连续追问；"
                     "主人要求安静、没有可信内容或会重复打扰时可以休息，并说明具体原因。"
                     "不要泛泛问候、臆测主人当下状况、创建任务、读新闻、反思或"
-                    "调用工具。要发消息时设置activity=read_chat、chat_action=reply，并填写reply。"
+                    "调用有副作用的工具；需要历史细节时只可调用只读memory_search/memory_get。"
+                    "要发消息时设置activity=read_chat、chat_action=reply，并填写reply。"
                     "此检查没有QQ或外部发送权限。"
                 )
                 if not self._initiative_still_current(epoch):
                     self._record_initiative_check(event, epoch, self._stopped_outcome())
                     return True
-                decision = await soul.life.choose([event], context)
+                decision = await soul.choose_with_memory(
+                    [event], context, epoch, current=lambda: self._initiative_still_current(epoch)
+                )
             except asyncio.CancelledError:
                 self._record_initiative_check(event, epoch, "interrupted",
                                               reason="自主检查已取消。")

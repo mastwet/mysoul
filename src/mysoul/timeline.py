@@ -97,6 +97,8 @@ class TimelineStore:
             request = ToolRequest.model_validate_json(request_json)
             if request.activity_id != activity.id or request.scope != Scope():
                 continue
+            if request.tool in {"memory_search", "memory_get"}:
+                continue
             result = ToolResult.model_validate_json(result_json)
             if result.evidence_ref:
                 evidence = db.execute(
@@ -129,7 +131,7 @@ class TimelineStore:
                 else activity.status,
                 "result": activity.final_note,
                 "cursor": activity.cursor,
-                "effect_ids": activity.effect_ids,
+                "effect_ids": [effect["action_id"] for effect in effects],
                 "effects": effects,
                 "context_refs": activity.context_refs,
             },

@@ -235,14 +235,20 @@ class Executor:
                     context = ContextBundle.model_validate(
                         self.store.get("activity_context", activity.id)
                     )
+                    from mysoul.recall import NAMES
+
+                    tool = output["decision"].get("tool")
+                    recall = tool in NAMES
                     evidence = Evidence(
-                        text=result.get("content", ""),
-                        scope=context.scope,
-                        source=f"tool:{result['action_id']}",
+                        **({"id": "recall:" + result["action_id"]} if recall else {}),
+                        text=result.get("content", ""), scope=context.scope,
+                        source=tool if recall else f"tool:{result['action_id']}",
                     )
-                    self.store.add_evidence(evidence)
-                    latest.context_refs.append(evidence.id)
-                    context.step_results.append(evidence)
+                    if not recall:
+                        self.store.add_evidence(evidence)
+                        latest.context_refs.append(evidence.id)
+                    if not any(old.id == evidence.id for old in context.step_results):
+                        context.step_results.append(evidence)
                     if len(context.payload()) > self.settings.context_chars:
                         self.store.save_activity(latest)
                         return self._finish(latest, "suspended")

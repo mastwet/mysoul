@@ -71,6 +71,11 @@ class LifeState(Contract):
     ] = "waiting"
 
 
+class MemoryCall(Contract):
+    tool: Literal["memory_search", "memory_get"]
+    arguments: dict[str, Any] = Field(default_factory=dict)
+
+
 class ActivityDecision(Contract):
     activity: Activity
     rationale: str = Field(default="", max_length=1000)
@@ -79,6 +84,7 @@ class ActivityDecision(Contract):
     rest_until: AwareDatetime | None = None
     chat_action: Literal["read", "silent", "reply"] = "silent"
     reply: str = Field(default="", max_length=131072)
+    memory_call: MemoryCall | None = None
 
 
 class ModelFailure(Contract):
@@ -93,6 +99,7 @@ class ModelFailure(Contract):
         "response_limit",
         "provider_error",
         "context_budget",
+        "recall_limit",
     ]
     message: str = Field(max_length=300)
 
