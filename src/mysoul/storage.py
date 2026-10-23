@@ -21,7 +21,8 @@ class StateStore:
         self.db.execute("PRAGMA journal_mode=WAL")
         self.db.execute("PRAGMA foreign_keys=ON")
         self.db.execute("PRAGMA busy_timeout=5000")
-        self.db.executescript((Path(__file__).parent / "migrations/001_initial.sql").read_text())
+        for migration in sorted((Path(__file__).parent / "migrations").glob("*.sql")):
+            self.db.executescript(migration.read_text(encoding="utf-8-sig"))
         self.db.commit()
 
     @contextmanager
@@ -73,13 +74,15 @@ class StateStore:
 
     def add_event(self, event: Event) -> bool:
         with self.transaction() as db:
-            return (
-                db.execute(
-                    "INSERT OR IGNORE INTO events VALUES(?,?,?)",
-                    (event.id, event.dedup_key, event.model_dump_json()),
-                ).rowcount
-                == 1
-            )
+            inserted = db.execute(
+                "INSERT OR IGNORE INTO events VALUES(?,?,?)",
+                (event.id, event.dedup_key, event.model_dump_json()),
+            ).rowcount == 1
+            if inserted:
+                from mysoul.timeline import TimelineStore
+
+                TimelineStore.event_in(db, event)
+            return inserted
 
     def events(self) -> list[Event]:
         with self.lock:
@@ -151,11 +154,26 @@ class StateStore:
                         "INSERT OR IGNORE INTO objects VALUES('recap_segment',?,?)",
                         (reply.id, json.dumps({"id": reply.id, "status": "pending"})),
                     )
+            from mysoul.timeline import TimelineStore
+
+            TimelineStore.interaction_in(db, event, result)
             if capture:
                 from mysoul.cognition import CognitiveStore
 
                 CognitiveStore.capture_interaction_in(db, event.id)
             db.execute("UPDATE inbox SET status='processed' WHERE dedup=?", (event.dedup_key,))
+
+    def _timeline_hook(self, db, kind, ident, value):
+        from mysoul.timeline import TimelineStore
+
+        if kind == "activity_context":
+            activity = self.get("activity", ident)
+            if activity:
+                TimelineStore(self).sync_task_in(db, activity["goal_id"])
+        elif kind == "activity":
+            TimelineStore(self).sync_task_in(db, value["goal_id"])
+        elif kind == "goal":
+            TimelineStore(self).sync_task_in(db, ident)
 
     def put(self, kind: str, ident: str, value):
         with self.transaction() as db:
@@ -163,6 +181,7 @@ class StateStore:
                 "INSERT OR REPLACE INTO objects VALUES(?,?,?)",
                 (kind, ident, json.dumps(value, ensure_ascii=False)),
             )
+            self._timeline_hook(db, kind, ident, value)
 
     def put_new(self, kind: str, ident: str, value) -> bool:
         with self.transaction() as db:
@@ -208,6 +227,7 @@ class StateStore:
                 "INSERT OR REPLACE INTO objects VALUES('goal',?,?)",
                 (goal.id, goal.model_dump_json()),
             )
+            self._timeline_hook(db, "goal", goal.id, goal.model_dump())
 
     def goal(self, ident: str) -> Goal:
         value = self.get("goal", ident)

@@ -131,6 +131,9 @@ class SoulService:
         try:
             self.lease.acquire()
             self.activities.recover_checks()
+            from mysoul.timeline import TimelineStore
+
+            TimelineStore(self.store).migrate()
             self.persona.initialize()
             self._backfill_dialogue()
             self.cognition.sources.migrate_pending()
