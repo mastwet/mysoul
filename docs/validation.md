@@ -581,3 +581,20 @@ Review rulings retained after scratch-ledger cleanup:
 - Both Important review findings were fixed in one pass;6 regression failures became
   green. No unresolved Critical/Important findings or deferred Minor findings remain
   within the reviewed scope. Other existing desktop-context changes remain preserved.
+
+
+## 2026-10-23：自主检查、前后台任务与独立发言
+
+- 根因：旧 Recap 的未回复记录与即时发言状态脱节，主动提示词偏向每次发言。新增 owner 范围有界回执，旧摘要不能覆盖已回应状态；完全重复的主动消息不发布。
+- 前台保持主人优先；后台只读、单步检查点推进，可重启恢复。主人明确请求持久化排队，自动提案不扩张队列。后台结果留在任务页，分享由后续检查独立选择。
+- RED/GREEN：重复回话、重启、范围隔离、上下文裁剪、后台让出/恢复、工具拒绝、主人打断、完成后不自动发言、取消不复活、后台队列与满额反馈；21 项新增集成回归通过。
+- 独立审查发现四项 P2，均先复现后修复：退出恢复标记、待开始任务放弃、最新发言回执优先保留、主人第二个后台请求持久化。审查没有搁置的范围事项。
+- 最终离线：345 passed / 9 skipped；UI：37 passed；Ruff、JS syntax、diff check 通过。外部跳过项不计通过。
+- 真实模型仅用公开合成数据：旧摘要声称猫玩笑未答、即时回执已答，连续两次保持安静；后台计算 17×23 后，依次为安静完成、下次分享 391、再次安静。没有新增私有历史诊断回放。
+- 激活前完整停止备份：`.local/backups/initiative-task-lanes-20261023-210926/ui-redesign`，含 SQLite/WAL、检查点、模型配置及 MemPalace 索引；摘要校验记录 `.local/initiative-activation-backup.json`。原 190 条 interaction 和 2 个 goal 保留；归档恢复后 488 条映射，待写 0。
+- 8767 本机服务已重启，保持自主开启、3 分钟检查、本机测试免令牌与既有无限总预算设置。MemPalace connected，原索引手动中文查询返回 2 条。
+- 浏览器已核对新自主说明与每 3 分钟选项；原用户标签页的输入和搜索结果未被覆盖。设置截图在本机工作区 `.local/initiative-settings-20261023.png`。
+
+- 激活后自然心跳 21:11:56–21:12:06：outcome=silent、publication_status=silent，因近期连续分享而选择安静，无新增聊天消息；无需强制触发真实私有诊断。
+
+- 最终 epoch 防护版本再次停止备份并重启：`.local/backups/initiative-task-lanes-final-20261023-211649/ui-redesign`；校验记录 `.local/initiative-final-backup.json`。重启后 MemPalace connected、中文索引查询仍返回2条，自主开启且周期3分钟。
