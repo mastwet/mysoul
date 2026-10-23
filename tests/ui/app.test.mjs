@@ -19,7 +19,7 @@ async function until(predicate) {
 async function fixture(chat,modelRequest,{tokenless=false}={}) {
   const dom=new JSDOM(html,{url:tokenless?"http://127.0.0.1:8765/":"http://127.0.0.1:8765/#token=fixture-token",runScripts:"outside-only",pretendToBeVisual:true});
   const {window}=dom,document=window.document;
-  const server={state:{fatigue:0,activity:"rest",mode:"normal",autonomy_enabled:true,autonomy_interval_minutes:360,next_initiative_at:null,autonomy_last_checked_at:null,autonomy_last_result:"waiting",model_calls:0,tokens_used:0},limits:{model_calls:100,tokens:50000,context_chars:131072,request_timeout:120},backend:"replay",send_enabled:false,persona:{version:0,public:"A companion",sections:{identity:"identity",relationship:"relationship",redline:"redline",user:"user",world:"world",dream:"dream",dark:"dark",mission:"mission"}},personaHistory:[{version:0,public:"A companion"}],memory:{backend:"local",method:"local lexical",evidence_count:0,pending_mempalace_sync:0,last_context:null},recap:{version:0,text:"",refs:[]},gates:{provider:"deferred",mempalace:"deferred",qq:"deferred",isolation:"disabled"},goals:[],activities:[],interactions:[],drafts:[],effects:[]};
+  const server={conversation:{revision:0},state:{fatigue:0,activity:"rest",mode:"normal",autonomy_enabled:true,autonomy_interval_minutes:360,next_initiative_at:null,autonomy_last_checked_at:null,autonomy_last_result:"waiting",model_calls:0,tokens_used:0},limits:{model_calls:100,tokens:50000,context_chars:131072,request_timeout:120},backend:"replay",send_enabled:false,persona:{version:0,public:"A companion",sections:{identity:"identity",relationship:"relationship",redline:"redline",user:"user",world:"world",dream:"dream",dark:"dark",mission:"mission"}},personaHistory:[{version:0,public:"A companion"}],memory:{backend:"local",method:"local lexical",evidence_count:0,pending_mempalace_sync:0,last_context:null},recap:{version:0,text:"",refs:[]},gates:{provider:"deferred",mempalace:"deferred",qq:"deferred",isolation:"disabled"},goals:[],activities:[],interactions:[],drafts:[],effects:[]};
   const sends=[],writes=[],historyReads=[];let pollCallback=()=>{};
   server.model={version:0,mode:"replay",url:"",model:"",key_present:false,source:"runtime",output_token_limit:null,token_budget:50000,context_chars:131072,request_timeout:120};
   window.HTMLDialogElement.prototype.showModal=function(){this.open=true;};
@@ -35,12 +35,16 @@ async function fixture(chat,modelRequest,{tokenless=false}={}) {
     else if(path.startsWith("/api/inner-voice?"))result=server.innerVoice||{items:[],has_more:false,next_before:null};
     else if(path.startsWith('/api/timeline')){
       const items=[...server.interactions.map((body,i)=>({id:`chat:${body.event_id}`,seq:i+1,revision:1,kind:'chat',body})),...(server.timeline||[])];
-      result={items,next_before:items[0]?.seq||null,has_more:false,change_cursor:items.length};
+      result={items,next_before:items[0]?.seq||null,has_more:false,change_cursor:items.length,session_revision:server.conversation.revision};
     }else if(path==='/api/archives')result=server.compression||{policy:{version:0},frontier:[],runs:[]};
     else if(path==="/api/chat"){
+      const requestRevision=server.conversation.revision;
       const body=JSON.parse(options.body);sends.push(body.text);const custom=chat?await chat(body.text):null;
       result=custom||{event_id:`event-${sends.length}`,choice:"owner_served",input:body.text,text:"**已收到**"};
-      server.interactions.push(result);
+      if(requestRevision===server.conversation.revision)server.interactions.push(result);
+    }else if(path==="/api/conversation/reset"){
+      const body=JSON.parse(options.body);writes.push({path,body});
+      server.conversation={revision:server.conversation.revision+1};server.interactions=[];server.timeline=[];server.recap={...server.recap,version:server.recap.version+1,text:"",refs:[]};result={...server.conversation,recap:server.recap};
     }else if(path==="/api/model"||path==="/api/model/test"){
       const body=JSON.parse(options.body);
       if(modelRequest)await modelRequest(path,body);
@@ -587,4 +591,86 @@ test("sidebar inner voice opens while preserving the chat draft",async()=>{
     assert.equal(f.textarea.value,"还没发出的聊天草稿");
     assert.equal(f.document.querySelectorAll(".message-turn").length,0);
   }finally{f.close();}
+});
+
+
+test("conversation reset confirms its scope and starts a clean persistent view",async()=>{
+ const f=await fixture();try{
+  f.server.interactions=[{event_id:"old",input:"旧聊天",text:"旧回答",choice:"owner_served"}];
+  await f.poll();await until(()=>f.document.getElementById("turn-old"));
+  f.textarea.value="旧草稿";f.document.getElementById("open-settings").click();
+  const tab=f.document.querySelector('[data-setting="conversation"]');assert.ok(tab);tab.click();
+  f.document.getElementById("reset-conversation").click();
+  assert.equal(f.document.getElementById("conversation-reset-confirm").hidden,false);
+  assert.equal(f.writes.length,0);
+  f.document.getElementById("cancel-conversation-reset").click();
+  assert.equal(f.document.getElementById("conversation-reset-confirm").hidden,true);
+  assert.ok(f.document.getElementById("turn-old"));
+  f.document.getElementById("reset-conversation").click();
+  f.document.getElementById("confirm-conversation-reset").click();
+  await until(()=>f.document.getElementById("conversation-feedback").textContent.includes("已开始新会话"));
+  assert.equal(f.document.querySelectorAll(".message-turn").length,0);
+  assert.equal(f.textarea.value,"");
+  assert.equal(f.server.persona.sections.identity,"identity");
+  assert.equal(f.writes[0].body.expected_version,0);
+  assert.equal(f.document.getElementById("download-conversation-archive").disabled,false);
+ }finally{f.close();}
+});
+
+test("failed conversation reset retains chat and draft for retry",async()=>{
+ const f=await fixture();try{
+  f.server.interactions=[{event_id:"old",input:"旧聊天",text:"旧回答",choice:"owner_served"}];
+  await f.poll();await until(()=>f.document.getElementById("turn-old"));f.textarea.value="保留草稿";
+  const fetch=f.window.fetch;f.window.fetch=async(path,options)=>path==="/api/conversation/reset"?{ok:false,status:409,json:async()=>({detail:"changed"})}:fetch(path,options);
+  f.document.getElementById("reset-conversation").click();f.document.getElementById("confirm-conversation-reset").click();
+  await until(()=>f.document.getElementById("conversation-feedback").textContent.includes("未重置"));
+  assert.ok(f.document.getElementById("turn-old"));assert.equal(f.textarea.value,"保留草稿");
+  assert.equal(f.document.getElementById("confirm-conversation-reset").disabled,false);
+ }finally{f.close();}
+});
+
+test("another tab's reset removes cached history and rejects a late older page",async()=>{
+ const f=await fixture();let release;try{
+  f.server.interactions=[{event_id:"old",input:"旧聊天",text:"旧回答",choice:"owner_served"}];
+  await f.poll();await until(()=>f.document.getElementById("turn-old"));
+  const fetch=f.window.fetch;f.window.fetch=async(path,options)=>{
+   if(String(path).includes("before=")){await new Promise(resolve=>release=resolve);return {ok:true,json:async()=>({items:[{id:"chat:late",seq:1,revision:1,kind:"chat",body:{event_id:"late",input:"迟到历史",text:"old"}}],has_more:false,change_cursor:1,session_revision:0})};}
+   return fetch(path,options);
+  };
+  f.document.getElementById("load-older").hidden=false;f.document.getElementById("load-older").click();await until(()=>release);
+  f.server.conversation={revision:1};f.server.interactions=[];
+  await f.poll();await until(()=>!f.document.getElementById("turn-old"));release();
+  await until(()=>!f.document.getElementById("load-older").disabled);
+  assert.equal(f.document.getElementById("turn-late"),null);
+ }finally{if(release)release();f.close();}
+});
+
+
+test("an old chat response cannot clear a new draft or publish after reset",async()=>{
+ let release;const f=await fixture(async()=>{await new Promise(resolve=>release=resolve);return {event_id:"late-old",input:"旧请求",text:"迟到回答",choice:"owner_served"};});
+ try{
+  f.send("旧请求");await until(()=>release);
+  f.document.getElementById("reset-conversation").click();f.document.getElementById("confirm-conversation-reset").click();
+  await until(()=>f.document.getElementById("conversation-feedback").textContent.includes("已开始新会话"));
+  f.textarea.value="新草稿";release();await until(()=>!f.textarea.disabled);
+  assert.equal(f.textarea.value,"新草稿");assert.equal(f.document.getElementById("turn-late-old"),null);
+ }finally{if(release)release();f.close();}
+});
+
+
+test("acknowledged reset clears an open Recap editor even if status refresh fails",async()=>{
+ const f=await fixture();try{
+  f.server.recap.text="OLD RECAP SHOULD DISAPPEAR";
+  f.document.querySelector('[data-view="memory"]').click();await until(()=>f.document.getElementById("recap-view").textContent.includes("OLD RECAP"));
+  f.document.getElementById("edit-recap").click();assert.equal(f.document.getElementById("recap-actions").hidden,true);
+  const fetch=f.window.fetch;let reset=false;f.window.fetch=async(path,options)=>{
+   if(path==="/api/status"&&reset)return {ok:false,status:503,json:async()=>({detail:"offline"})};
+   const result=await fetch(path,options);if(path==="/api/conversation/reset")reset=true;return result;
+  };
+  f.document.getElementById("reset-conversation").click();f.document.getElementById("confirm-conversation-reset").click();
+  await until(()=>f.document.getElementById("conversation-feedback").textContent.includes("已开始新会话"));
+  assert.equal(f.document.getElementById("recap-form").hidden,true);
+  assert.equal(f.document.getElementById("recap-actions").hidden,false);
+  assert.equal(f.document.getElementById("recap-view").textContent.includes("OLD RECAP"),false);
+ }finally{f.close();}
 });

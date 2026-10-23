@@ -143,9 +143,17 @@
   <dialog id="settings-dialog" class="settings-dialog" aria-labelledby="settings-title">
     <div class="dialog-header"><h2 id="settings-title">设置</h2><button class="icon-button" type="button" data-close="settings-dialog" aria-label="关闭设置"></button></div>
     <div class="settings-layout">
-      <nav class="settings-nav" aria-label="设置分类"><button type="button" class="settings-tab active" data-setting="general" aria-current="page"><span data-icon="appearance"></span>外观与输入</button><button type="button" class="settings-tab" data-setting="model"><span data-icon="connection"></span>模型服务</button><button type="button" class="settings-tab" data-setting="life"><span data-icon="activity"></span>主体状态</button><button type="button" class="settings-tab" data-setting="connections"><span data-icon="connection"></span>接入与预算</button></nav>
+      <nav class="settings-nav" aria-label="设置分类"><button type="button" class="settings-tab active" data-setting="general" aria-current="page"><span data-icon="appearance"></span>外观与输入</button><button type="button" class="settings-tab" data-setting="conversation"><span data-icon="chat"></span>会话</button><button type="button" class="settings-tab" data-setting="model"><span data-icon="connection"></span>模型服务</button><button type="button" class="settings-tab" data-setting="life"><span data-icon="activity"></span>主体状态</button><button type="button" class="settings-tab" data-setting="connections"><span data-icon="connection"></span>接入与预算</button></nav>
       <div id="settings-content" class="settings-content">
         <section id="setting-general" class="setting-page"><h3>外观与输入</h3><div class="setting-row"><div><label for="theme">主题</label><p>选择更适合此刻的外观。</p></div><select id="theme"><option value="light">浅色</option><option value="dark">深色</option><option value="system">跟随系统</option></select></div><div class="setting-row"><div><label for="enter-send">Enter 发送消息</label><p>关闭后，使用 Ctrl / ⌘ + Enter 发送。</p></div><input id="enter-send" class="switch" type="checkbox" role="switch" checked></div><p class="field-note">外观与输入偏好仅保存在当前浏览器。</p></section>
+        <section id="setting-conversation" class="setting-page" hidden>
+          <h3>会话</h3><h4>重置当前会话</h4>
+          <p class="muted">将当前聊天归档，清空聊天和短期摘要，停止本次会话的待办与回复。人格、长期记忆和模型设置保留。</p>
+          <p id="conversation-info" class="field-note"></p>
+          <div class="form-actions"><button id="download-conversation-archive" class="secondary" type="button" disabled>下载上次聊天归档</button><button id="reset-conversation" class="secondary" type="button">重置当前会话</button></div>
+          <div id="conversation-reset-confirm" class="section-block" hidden><p>确认归档并开始新会话？当前未发送的草稿也会清空。</p><div class="form-actions"><button id="cancel-conversation-reset" class="secondary" type="button">取消</button><button id="confirm-conversation-reset" class="primary" type="button">归档并重置</button></div></div>
+          <p id="conversation-feedback" class="field-note" role="status"></p>
+        </section>
         <section id="setting-model" class="setting-page" hidden>
           <h3>模型服务</h3><p id="model-current" class="muted"></p>
           <form id="model-form" autocomplete="off">

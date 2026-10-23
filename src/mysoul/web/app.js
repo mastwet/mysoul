@@ -67,6 +67,7 @@ let csrf="", snapshot=null, skillData=null, recapBase=null, activeView="chat";
 let refreshPromise=null, pendingChat=null, chatSignature="", lifeDirty=false, loadedChat=false;
 let timelineItems=[], timelineCursor=0, olderCursor=null, historyReady=false, historyLoading=false;
 let archiveState=null;
+let sessionRevision=null, historyGeneration=0, chatAbort=null, resetExpectedVersion=0;
 const innerVoice=createInnerVoice({document,api});
 let modelDirty=false, modelVersion=0, personaEditVersion=0;
 let cognitionDirty=false,cognitionEditVersion=0;
@@ -80,11 +81,11 @@ function notice(text) {
   $("notice-text").textContent=inSettings?"":text;
 }
 $("dismiss-notice").addEventListener("click",()=>notice(""));
-async function api(path, body) {
+async function api(path, body, signal) {
   const headers=token?{Authorization:`Bearer ${token}`} : {};
   if(body!==undefined){headers["Content-Type"]="application/json";headers["X-CSRF-Token"]=csrf;}
   let response;
-  try{response=await fetch(`/api/${path}`,{method:body===undefined?"GET":"POST",headers,body:body===undefined?undefined:JSON.stringify(body)});}
+  try{response=await fetch(`/api/${path}`,{signal,method:body===undefined?"GET":"POST",headers,body:body===undefined?undefined:JSON.stringify(body)});}
   catch{throw new Error("连接中断，请检查本地服务后重试。输入已保留。");}
   let result;try{result=await response.json();}catch{throw new Error("服务响应不可用，请稍后重试。");}
   if(!response.ok)throw Object.assign(new Error(response.status===409?"状态已变化或主体正忙，请稍后重试。当前输入已保留。":response.status===401?"操作令牌不可用，请使用启动时的本机访问链接。":typeof result.detail==="string"?result.detail:`请求失败（${response.status}）`),{status:response.status});
@@ -218,10 +219,12 @@ bindForm("login-form",async()=>{token=$("token").value.trim();$("login-error").h
 async function refresh() {
   if(!csrf)return;
   if(refreshPromise)return refreshPromise;
-  const requestedView=activeView;
+  const requestedView=activeView,requestedGeneration=historyGeneration;
   refreshPromise=(async()=>{
     try{
-      snapshot=await api("status");
+      const next=await api("status");
+      if(requestedGeneration!==historyGeneration)return;
+      snapshot=next;
       $("connection").textContent="已连接 · 本机";document.querySelector(".connection-dot").classList.remove("offline");
       const previousNotice=$("notice-text").textContent||$("settings-feedback").textContent;
       if(previousNotice.startsWith("连接中断"))notice("");
@@ -239,12 +242,15 @@ async function refresh() {
         if(activeView===requestedView){skillData=skills;renderSkills(skills);renderEvidenceOptions(evidence);}
       }
     }catch(error){$("connection").textContent="连接中断";document.querySelector(".connection-dot").classList.add("offline");notice(error.message);}
-    finally{refreshPromise=null;if(activeView!==requestedView)queueMicrotask(refresh);}
+    finally{refreshPromise=null;if(activeView!==requestedView||requestedGeneration!==historyGeneration)queueMicrotask(refresh);}
   })();
   return refreshPromise;
 }
 function renderSnapshot(force=false) {
   if(!snapshot)return;
+  const conversation=snapshot.conversation||{revision:0};
+  $("conversation-info").textContent=conversation.revision?`已归档 ${conversation.revision} 次，旧聊天原文保存在本机。`:"还没有重置记录。";
+  if(!$("download-conversation-archive").dataset.loading)$("download-conversation-archive").disabled=!conversation.revision;
   const state=snapshot.state, percent=Math.round(state.fatigue*100), activity=activityNames[state.activity]||state.activity;
   const model=snapshot.model;
   const modelLabel=model.mode==="provider"?`真实模型 · ${model.model}`:model.mode==="procedure-replay"?"离线流程演示":"离线回放";
@@ -332,10 +338,55 @@ function renderTurn(item) {
   }else reply.append(node("p","已保留这条消息，没有发出回复。","muted"));
   row.append(reply);return row;
 }
+function resetConversationView(revision,clearDraft=false){
+ sessionRevision=revision;historyGeneration++;chatAbort?.abort();pendingChat=null;
+ timelineItems=[];timelineCursor=0;olderCursor=null;historyReady=false;chatSignature="";loadedChat=false;
+ $("load-older").hidden=true;$("history-feedback").textContent="";$("jump-bottom").hidden=true;
+ recapBase=null;$("recap-form").hidden=true;$("recap-view").hidden=false;$("recap-actions").hidden=false;$("recap-text").value="";
+ if(clearDraft)$("chat-text").value="";
+ renderMessages();updateComposer();
+}
+$("reset-conversation").addEventListener("click",()=>{
+ resetExpectedVersion=snapshot?.conversation?.revision??sessionRevision??0;
+ $("conversation-reset-confirm").hidden=false;$("conversation-feedback").textContent="";
+});
+$("cancel-conversation-reset").addEventListener("click",()=>{$("conversation-reset-confirm").hidden=true;});
+$("confirm-conversation-reset").addEventListener("click",async()=>{
+ const button=$("confirm-conversation-reset");if(button.disabled)return;
+ button.disabled=true;$("cancel-conversation-reset").disabled=true;$("reset-conversation").disabled=true;
+ try{
+  const result=await api("conversation/reset",{expected_version:resetExpectedVersion});
+  resetConversationView(result.revision,true);$("conversation-reset-confirm").hidden=true;
+  $("conversation-feedback").textContent="已开始新会话，旧聊天已归档。";
+  if(snapshot){const {recap,...conversation}=result;snapshot.conversation=conversation;snapshot.recap=recap;}
+  renderSnapshot();await refresh();
+ }catch(error){$("conversation-feedback").textContent=`未重置，聊天和草稿已保留。${error.message}`;}
+ finally{button.disabled=false;$("cancel-conversation-reset").disabled=false;$("reset-conversation").disabled=false;}
+});
+$("download-conversation-archive").addEventListener("click",async()=>{
+ const button=$("download-conversation-archive"),revision=snapshot?.conversation?.revision;
+ if(!revision||button.disabled)return;button.disabled=true;button.dataset.loading="true";
+ try{
+  let before=null,more=true;const items=[];
+  while(more){const params=new URLSearchParams({limit:"100"});if(before)params.set("before",before);
+   const page=await api(`conversation/archives/${revision}?${params}`);items.push(...page.items);before=page.next_before;more=page.has_more;}
+  items.sort((a,b)=>a.seq-b.seq);
+  const url=URL.createObjectURL(new Blob([JSON.stringify({revision,items},null,2)],{type:"application/json"}));
+  const link=node("a");link.href=url;link.download=`mysoul-chat-archive-${revision}.json`;document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+  $("conversation-feedback").textContent="聊天归档已下载到本机。";
+ }catch(error){$("conversation-feedback").textContent=`归档下载失败。${error.message}`;}
+ finally{delete button.dataset.loading;button.disabled=false;}
+});
 async function pollTimeline() {
  let more=true;
  while(more){
+  const generation=historyGeneration;
   const page=await api(historyReady?`timeline?after_change=${timelineCursor}&limit=100`:"timeline");
+  if(generation!==historyGeneration)return;
+  const revision=page.session_revision??0;
+  if(sessionRevision!==null&&revision<sessionRevision)return;
+  if(sessionRevision!==null&&revision>sessionRevision){resetConversationView(revision);continue;}
+  sessionRevision=revision;
   timelineItems=mergeTimeline(timelineItems,page);timelineCursor=page.change_cursor;
   if(!historyReady){olderCursor=page.next_before;$("load-older").hidden=!page.has_more;historyReady=true;more=false;}
   else more=page.has_more;
@@ -346,7 +397,9 @@ $("load-older").addEventListener("click",async()=>{
  if(historyLoading)return;historyLoading=true;const button=$("load-older"),scroller=$("conversation-scroll");
  button.disabled=true;$("history-feedback").textContent="加载中…";
  try{
+  const generation=historyGeneration;
   const page=await api(`timeline?before=${olderCursor||timelineItems[0]?.seq||1}`);
+  if(generation!==historyGeneration||(page.session_revision??0)!==sessionRevision)return;
   const previous={scrollTop:scroller.scrollTop,scrollHeight:scroller.scrollHeight};
   timelineItems=mergeTimeline(timelineItems,page);olderCursor=page.next_before;renderMessages(true);
   button.hidden=!page.has_more;$("history-feedback").textContent=page.has_more?"":"已到最早的消息";
@@ -579,14 +632,17 @@ $("chat-text").addEventListener("keydown",event=>{
 });
 bindForm("chat-form",async()=>{
   const input=$("chat-text"),text=input.value;if(!text.trim()||pendingChat)return;
+  const generation=historyGeneration,controller=new AbortController();chatAbort=controller;
   pendingChat={input:text,choice:"owner_served",watermark:timelineItems.at(-1)?.seq||0};renderMessages();scrollBottom();
   try{
-    const result=await api("chat",{text});
+    const result=await api("chat",{text},controller.signal);
+    if(generation!==historyGeneration)return;
     if(!result.error)input.value="";
     await pollTimeline();pendingChat=null;renderMessages();await refresh();
     if(result.error)notice(`${result.error.message} 已保留输入；不会自动重发。`);
   }
-  finally{pendingChat=null;renderMessages();updateComposer();}
+  catch(error){if(generation===historyGeneration)throw error;}
+  finally{if(generation===historyGeneration){pendingChat=null;chatAbort=null;renderMessages();updateComposer();}}
 });
 document.querySelectorAll("[data-prompt]").forEach(el=>el.addEventListener("click",()=>{$("chat-text").value=el.dataset.prompt;updateComposer();$("chat-text").focus();}));
 bindForm("goal-form",async()=>{await api("goals",{text:$("goal-text").value});$("goal-text").value="";setView("chat");});

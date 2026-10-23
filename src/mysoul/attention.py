@@ -17,9 +17,10 @@ class AttentionLedger:
                 "SELECT i.body,e.body FROM objects i JOIN events e ON e.id=i.id "
                 "WHERE i.kind='interaction' AND json_extract(e.body,'$.scope.audience')='owner' "
                 "AND json_extract(e.body,'$.scope.conversation')='owner' "
+                + "AND e.rowid > ? "
                 + where
                 + " ORDER BY e.rowid DESC LIMIT ?",
-                (limit,),
+                ((self.store.get("conversation", "current") or {}).get("event_floor", 0), limit),
             ).fetchall()
         return [(json.loads(i), json.loads(e)) for i, e in reversed(rows)]
 
@@ -74,6 +75,7 @@ class AttentionLedger:
             rows = self.store.db.execute(
                 "SELECT body FROM objects WHERE kind='goal' "
                 "AND json_extract(body,'$.lane')='background' "
+                "AND id NOT IN (SELECT id FROM objects WHERE kind='conversation_archived_goal') "
                 "ORDER BY CASE json_extract(body,'$.status') "
                 "WHEN 'active' THEN 0 WHEN 'suspended' THEN 0 WHEN 'pending' THEN 1 ELSE 2 END, "
                 "CASE WHEN json_extract(body,'$.status') IN ('active','suspended','pending') "

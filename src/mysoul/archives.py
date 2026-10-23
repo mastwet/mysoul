@@ -93,10 +93,15 @@ class ArchiveStore:
         if scope != Scope():
             return []
         with self.store.transaction() as db:
+            from mysoul.conversation import boundary_in
+
+            floor = boundary_in(db)["timeline_floor"]
             rows = db.execute(
-                "SELECT seq,id,created_at,body,revision,kind FROM timeline ORDER BY seq"
+                "SELECT seq,id,created_at,body,revision,kind FROM timeline "
+                "WHERE seq>? ORDER BY seq",
+                (floor,),
             ).fetchall()
-            nodes = [n for n in self.nodes() if n.scope == scope]
+            nodes = [n for n in self.nodes() if n.scope == scope and n.first_seq > floor]
             known = {n.id for n in nodes}
             active = [n for n in nodes if n.active]
             rebuild = set()
@@ -137,7 +142,8 @@ class ArchiveStore:
                 )
                 self.save_in(db, leaf)
         return sorted(
-            (n for n in self.nodes() if n.active and n.scope == scope), key=lambda n: n.first_seq
+            (n for n in self.nodes()
+             if n.active and n.scope == scope and n.first_seq > floor), key=lambda n: n.first_seq
         )
 
     def plan(self, policy, budget_chars, reserved_chars, *, context_chars=None):

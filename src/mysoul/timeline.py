@@ -26,6 +26,7 @@ class TimelinePage(Contract):
     has_more: bool
     change_cursor: int
     watermark: int
+    session_revision: int = 0
 
 
 class TimelineStore:
@@ -51,6 +52,10 @@ class TimelineStore:
 
     @classmethod
     def event_in(cls, db, event):
+        from mysoul.conversation import current_source_in
+
+        if not current_source_in(db, event.id):
+            return
         if event.scope != Scope() or event.trust != "owner_command":
             return
         if db.execute(
@@ -74,6 +79,10 @@ class TimelineStore:
 
     @classmethod
     def interaction_in(cls, db, event, result):
+        from mysoul.conversation import current_source_in
+
+        if not current_source_in(db, event.id):
+            return
         if event.scope != Scope():
             return
         body = dict(result)
@@ -83,6 +92,10 @@ class TimelineStore:
 
     @classmethod
     def task_in(cls, db, goal, activity):
+        from mysoul.conversation import current_source_in
+
+        if not current_source_in(db, activity.id):
+            return
         if goal.lane == "background":
             return  # Quiet work is inspectable in Tasks; publication is a separate decision.
         context = db.execute(
@@ -185,7 +198,7 @@ class TimelineStore:
                     self.event_in(db, event)
             db.execute("INSERT INTO objects VALUES('timeline_migration','v1','{}')")
 
-    def page(self, *, before=None, after_change=None, limit=50):
+    def page(self, *, before=None, after_change=None, limit=50, archive_revision=None):
         if (
             not 1 <= limit <= 100
             or (before is not None and before < 1)
@@ -196,18 +209,31 @@ class TimelineStore:
             raise ValueError("Use older paging or change polling separately")
         with self.store.lock:
             db = self.store.db
+            from mysoul.conversation import boundary_in
+
+            boundary = boundary_in(db)
+            floor, ceiling = boundary["timeline_floor"], None
+            if archive_revision is not None:
+                archive = self.store.get("conversation_archive", str(archive_revision))
+                if archive is None:
+                    raise KeyError(archive_revision)
+                floor, ceiling = archive["start_seq"], archive["timeline_floor"]
             watermark = db.execute("SELECT COALESCE(MAX(seq),0) FROM timeline").fetchone()[0]
             cursor = db.execute("SELECT COALESCE(MAX(seq),0) FROM timeline_changes").fetchone()[0]
             if after_change is not None:
                 rows = db.execute(
-                    "SELECT * FROM timeline WHERE change_seq>? AND change_seq<=? "
+                    "SELECT * FROM timeline WHERE seq>? AND change_seq>? AND change_seq<=? "
                     "ORDER BY change_seq LIMIT ?",
-                    (after_change, cursor, limit + 1),
+                    (floor, after_change, cursor, limit + 1),
                 ).fetchall()
             else:
+                upper = min(
+                    before or watermark + 1,
+                    (ceiling if ceiling is not None else watermark) + 1,
+                )
                 rows = db.execute(
-                    "SELECT * FROM timeline WHERE seq<? ORDER BY seq DESC LIMIT ?",
-                    (before or watermark + 1, limit + 1),
+                    "SELECT * FROM timeline WHERE seq>? AND seq<? ORDER BY seq DESC LIMIT ?",
+                    (floor, upper, limit + 1),
                 ).fetchall()
             more = len(rows) > limit
             rows = rows[:limit]
@@ -238,4 +264,5 @@ class TimelineStore:
                 has_more=more,
                 change_cursor=change_cursor,
                 watermark=watermark,
+                session_revision=boundary["revision"],
             )

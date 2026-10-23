@@ -138,6 +138,10 @@ class StateStore:
 
     def record_interaction(self, event, result, reply=None, *, enqueue=True, capture=True):
         with self.transaction() as db:
+            from mysoul.conversation import current_source_in
+
+            if not current_source_in(db, event.id):
+                enqueue = capture = False
             db.execute(
                 "INSERT INTO objects VALUES('interaction',?,?) "
                 "ON CONFLICT(kind,id) DO UPDATE SET body=excluded.body",

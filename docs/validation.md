@@ -609,3 +609,15 @@ Review rulings retained after scratch-ledger cleanup:
 - 激活前停止服务并完整备份到 `.local/backups/inner-voice-20261023-214439/ui-redesign`，含应用库、检查点、配置与索引；校验记录 `.local/inner-voice-backup.json`。8767 已重启，自主开启、3 分钟检查和本机测试设置保留，MemPalace connected、待归档 0。
 - 浏览器验证真实已有的保持安静原因、起止时间、调度轮次、分类筛选和空状态；未发送测试聊天或新增私有历史回放。截图：`C:/Users/Administrator/Desktop/mysoul/.local/inner-voice-20261023.png`。原用户标签页未重载。
 - 其他正在进行的 Recap-only 与原生 MemPalace 浏览器改动留在工作树，不纳入此提交。
+
+
+## 2026-10-23：设置中的会话重置
+
+- 用户已确认范围：归档旧聊天，清空当前聊天及短期摘要，保留人格与长期记忆。设置新增会话分类、确认/取消、反馈和上次聊天归档下载。
+- 持久化会话边界、Recap 空版本和 epoch 在一个 SQLite 事务中更新；旧任务停止，旧消息、检查点结果、整理来源及任务反馈不回流。归档分页保留原文；重启后边界继续生效，过期重置版本拒绝。
+- RED/GREEN 覆盖：授权/Origin/CSRF、失败回滚、归档边界/分页、长期证据与队列保留、实际异步主人回复中断、旧任务晚到、空闲反馈重建、多标签页分页及聊天延迟响应、失败草稿保留。
+- 独立审查三项 P2 全部复现并修复：摘要编辑按钮丢失、重置后刷新失败显示旧摘要、归档失败任务再次生成待整理反馈。无未解决范围内事项。
+- 最终：363 passed /10 skipped；UI57 passed；Ruff、JS syntax、git diff check 与 uv offline build 通过。跳过的外部检查不计通过。
+- 激活前停止并完整备份：`.local/backups/conversation-reset-20261023-224850/ui-redesign`，应用库 SHA256 一致；校验记录 `.local/conversation-reset-backup.json`。8767 已重启，自主开启/3分钟检查/既有本机测试与无限累计预算设置保留。
+- 真实浏览器核对设置会话入口、重置范围、确认与取消，未提交实际重置；运行会话版本仍为0、Recap117、人格2，MemPalace connected，已有“巨嘴鸟”中文检索返回1条。没有新增真实模型诊断回放。
+- 截图：`C:/Users/Administrator/Desktop/mysoul/.local/conversation-reset-20261023.png`。原用户标签页未重载，实际聊天未清空。

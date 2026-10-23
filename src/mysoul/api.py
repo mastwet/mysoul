@@ -242,6 +242,10 @@ def create_app(settings: Settings | None = None, *, token=None, service=None):
 
     register_inner_voice_routes(app, authorize)
 
+    from mysoul.conversation import register_conversation_routes
+
+    register_conversation_routes(app, authorize)
+
     guard = [Depends(authorize)]
 
     @app.get("/api/session", dependencies=guard)

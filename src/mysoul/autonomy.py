@@ -87,6 +87,8 @@ class ActivityRouter:
     def capture_feedback(self):
         soul = self.soul
         for activity in soul.store.all("activity"):
+            if soul.store.get("conversation_archived_goal", activity["goal_id"]):
+                continue
             soul.cognition.sources.capture_outcome(activity["id"])
             if activity["status"] not in {"completed", "failed", "suspended"}:
                 continue

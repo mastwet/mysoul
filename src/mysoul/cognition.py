@@ -58,6 +58,10 @@ class CognitiveStore:
     def _insert(db, ident, event_id, role, text, scope, created_at):
         if not text or scope.audience != "owner":
             return
+        from mysoul.conversation import current_source_in
+
+        if not current_source_in(db, event_id):
+            return
         evidence = Evidence(
             id=ident, text=text, scope=scope, source="experience:" + role,
             source_scopes=[scope], created_at=created_at,

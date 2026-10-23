@@ -433,8 +433,11 @@ class SoulService:
                 "SELECT i.body,e.body FROM objects i JOIN events e ON e.id=i.id "
                 "WHERE i.kind='interaction' AND json_extract(e.body,'$.scope.audience')=? "
                 "AND json_extract(e.body,'$.scope.conversation')=? "
+                "AND (? != 'owner' OR e.rowid > ?) "
                 "ORDER BY json_extract(e.body,'$.received_at') DESC LIMIT 20",
-                (scope.audience, scope.conversation),
+                (scope.audience, scope.conversation, scope.audience,
+                 self.store.get("conversation", "current")["event_floor"]
+                 if self.store.get("conversation", "current") else 0),
             ).fetchall()
         turns = []
         for result_json, event_json in reversed(rows):
@@ -896,6 +899,8 @@ class SoulService:
             await model.close()
 
     def status(self):
+        from mysoul.conversation import ConversationStore
+
         with self.store.lock:
             from mysoul.domain import ToolResult
 
@@ -906,6 +911,7 @@ class SoulService:
                 )
             ]
         return {
+            "conversation": ConversationStore(self.store).current(),
             "state": self.store.load_subject().model_dump(mode="json"),
             "activities": self.store.all("activity"),
             "goals": self.store.all("goal"),
