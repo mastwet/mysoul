@@ -342,3 +342,10 @@ failed. Skipped or failed external checks are not counted as passing full v0.1.
   Existing data was backed up before activation. Antigravity Tools was restarted from
   the installed desktop shortcut target when port 8045 was confirmed unavailable.
   Gateway port connectivity alone is not counted as successful proactive speech.
+- After restoring the gateway, `/models` returned 200 and included the configured
+  gemini-3.8-flash-high; a non-private minimal generation returned HTTP 200 with a reply.
+  The actual natural initiative starting **09:12:22** still timed out at **09:16:22**
+  (240 seconds), with no assistant interaction published. Thus actual proactive
+  speech is **not accepted as fixed**. The next scheduled check remains enabled.
+  Exact private-context diagnostic replay awaits explicit authorization after the
+  automatic approval rejection; no such replay has been executed.
