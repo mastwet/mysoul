@@ -2,7 +2,6 @@ import json
 from hashlib import sha256
 
 from mysoul.domain import ContextBudget, ContextBundle, RecapVersion, Scope
-from mysoul.memory import MemoryUnavailable
 from mysoul.storage import Conflict, StateStore
 
 
@@ -259,34 +258,11 @@ class ContextAssembler:
                 break
             admitted = candidate.history
         bundle.history = admitted
-        try:
-            hits = await self.memory.search(self.task, scope, 10)
-        except MemoryUnavailable:
-            bundle.recall_status = "unavailable"
-            hits = []
+        # Long-term memory is available only through explicit read-only tools.
         refresh_recap_context(self.recap.store, bundle)
         if len(bundle.payload()) > budget.max_chars:
             raise ContextOverflow("Committed context changed beyond admission budget")
-        for hit in hits:
-            if not hit.permitted(scope):
-                continue
-            existing_ids = {e.id for e in bundle.evidence + bundle.archives}
-            if hit.id in existing_ids:
-                continue
-            if hit.id in self.covered_refs:
-                detail = getattr(self.memory, "detail", None)
-                hit = await detail(hit, self.task, scope) if detail else None
-                if hit is None or hit.id in existing_ids:
-                    continue
-            history_events = {message.event_id for message in bundle.history}
-            if hit.id in history_events or (
-                hit.source == "assistant-reply" and hit.id.removeprefix("reply:") in history_events
-            ):
-                continue
-            candidate = bundle.model_copy(deep=True)
-            candidate.evidence.append(hit)
-            if len(candidate.payload()) <= budget.max_chars:
-                bundle = candidate
+        bundle.recall_status = "not_requested"
         return bundle
 
 

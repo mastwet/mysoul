@@ -48,7 +48,12 @@ async def test_group_context_excludes_private_sources(rig):
     await memory.add(Evidence(text="public group fact", scope=group))
     await memory.add(Evidence(text="private evidence"))
     result = await assembler.build(group, ContextBudget())
-    assert "public group fact" in result.payload()
+    assert "public group fact" not in result.payload()
+    from mysoul.recall import MemoryTools
+
+    found = await MemoryTools(lambda: memory).call("memory_search", {"query": "fact"}, group)
+    assert "public group fact" in str(found)
+    assert "private evidence" not in str(found)
     assert "PRIVATE-CANARY" not in result.payload()
     assert "private evidence" not in result.payload()
 
@@ -90,6 +95,6 @@ async def test_memory_unavailable_is_explicit(rig):
     _, _, memory, assembler = rig
     memory.available = False
     bundle = await assembler.build(Scope(), ContextBudget())
-    assert bundle.recall_status == "unavailable"
+    assert bundle.recall_status == "not_requested"
     with pytest.raises(MemoryUnavailable):
         await memory.search("fact", Scope(), 5)
