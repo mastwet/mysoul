@@ -312,3 +312,33 @@ for commands, screenshot references, third-party notice and review boundaries.
 Delivery remains **offline loop complete / real integrations pending acceptance**.
 A real provider no-change cycle passed, while the disposable positive-change reflection
 failed. Skipped or failed external checks are not counted as passing full v0.1.
+
+## Main-chat initiative diagnosis and visibility (2026-10-23)
+
+- The user's report was valid: an enabled three-minute check was not proof of a new
+  assistant message. Actual checks at 01:15 and 01:18 timed out after 120 seconds;
+  the 01:24 request returned a provider error after about 145 seconds. After the
+  interrupted session, the configured localhost:8045 gateway was not running.
+- Persist each check's start, finish, outcome, decision reason and structured model
+  failure. Expose the current receipt through the shared status API and show the
+  reason in settings and failure category in the main-chat status. Cancellation
+  propagates after recording an interrupted result; startup closes orphaned waiting
+  records. Settings pause is distinguished from owner-input interruption.
+- Clarify that enabled autonomy may begin a concrete new topic using shared interests
+  and existing knowledge, without requiring a new owner turn. Preserve quiet, epoch,
+  fatigue, budget and duplicate-topic constraints. The heartbeat still cannot browse
+  or send externally; it must not claim live exploration without tool evidence.
+- Include assistant-initiated messages in the recent-message sidebar, which previously
+  filtered them out. A regression demonstrated that omission before the correction.
+- Real-provider synthetic plant-knowledge fixtures generated assistant initiatives;
+  they contained no actual user conversations. A proposed private-context diagnostic
+  replay was rejected by automatic approval and was not executed.
+- Independent review identified cancellation/restart receipts left waiting and pause
+  mislabeled as input interruption. Both were reproduced RED and fixed GREEN.
+  Final **236 Python passed, 8 external skips; 27 UI passed**; Ruff, JS syntax,
+  whitespace checks and offline package build passed. Existing branch retained.
+- Runtime retains tokenless local testing, unlimited cumulative budgets, selected
+  model and three-minute cadence. Saved request timeout changed from 120 to 240 seconds.
+  Existing data was backed up before activation. Antigravity Tools was restarted from
+  the installed desktop shortcut target when port 8045 was confirmed unavailable.
+  Gateway port connectivity alone is not counted as successful proactive speech.

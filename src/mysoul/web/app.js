@@ -264,7 +264,11 @@ function renderSnapshot(force=false) {
   }
   if(!lifeDirty&&!busyScopes.has($("life-form"))){$("mode").value=state.mode;$("fatigue-input").value=percent;$("fatigue-range").value=percent;$("autonomy-enabled").checked=state.autonomy_enabled;$("autonomy-interval").value=String(state.autonomy_interval_minutes);}
   const initiativeCadence=state.autonomy_interval_minutes<60?state.autonomy_interval_minutes+" 分钟":state.autonomy_interval_minutes/60+" 小时";
-  const initiativeOutcome={waiting:state.autonomy_last_checked_at?"正在检查":"等待首次检查",silent:"上次保持安静",message:"最近已主动发起",error:"上次检查失败",interrupted:"主人输入打断了检查",paused:"设置变化后已停止"}[state.autonomy_last_result]||"等待检查";
+  let initiativeOutcome={waiting:state.autonomy_last_checked_at?"正在检查":"等待首次检查",silent:"上次保持安静",message:"最近已主动发起",error:"上次检查失败",interrupted:"主人输入打断了检查",paused:"设置变化后已停止"}[state.autonomy_last_result]||"等待检查";
+  const initiative=snapshot.initiative;
+  const initiativeError=initiative?.error;
+  if(state.autonomy_last_result==="error"&&initiativeError)initiativeOutcome+=`（${failureNames[initiativeError.code]||initiativeError.code}）`;
+  $("initiative-detail").textContent=initiativeError?initiativeError.message:initiative?.outcome==="waiting"?"正在检查，完成后会显示决策原因。":initiative?.reason||"最近一次检查尚无详细记录。";
   let initiativePauseReason=state.mode!=="normal"?modeNames[state.mode]+"模式":state.fatigue>=.9?"疲劳过高":limits.model_calls!==null&&limits.model_calls!==undefined&&state.model_calls>=limits.model_calls?"调用预算已用尽":limits.tokens!==null&&limits.tokens!==undefined&&state.tokens_used>=limits.tokens?"Token预算已用尽":"";
   $("initiative-status").textContent=!state.autonomy_enabled?"自主发起已暂停 · "+initiativeOutcome:initiativePauseReason?"自主发起暂停 · "+initiativePauseReason+" · "+initiativeOutcome:"自主发起已开启 · 每 "+initiativeCadence+" · "+initiativeOutcome;
   renderCognition();
@@ -326,7 +330,7 @@ function renderMessages(interactions) {
   if(stick)requestAnimationFrame(scrollBottom);else $("jump-bottom").hidden=false;
 }
 function renderRecent(interactions) {
-  const items=interactions.filter(item=>item.choice==="owner_served"&&item.input).slice(-12).reverse().map(item=>({key:item.event_id,text:item.input}));
+  const items=interactions.filter(item=>(item.choice==="owner_served"&&item.input)||(item.choice==="initiative"&&item.text)).slice(-12).reverse().map(item=>({key:item.event_id,text:item.choice==="initiative"?"主动 · "+item.text:item.input}));
   keyedList($("recent-messages"),items,item=>{const b=node("button",item.text);b.type="button";b.title=item.text;b.addEventListener("click",()=>{setView("chat");requestAnimationFrame(()=>$("turn-"+item.key)?.scrollIntoView({block:"center"}));});return b;},"还没有消息");
 }
 function renderJobs(state,force) {

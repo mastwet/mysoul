@@ -65,6 +65,7 @@ class LifeState(Contract):
     autonomy_interval_minutes: int = Field(default=360, ge=3, le=1440)
     next_initiative_at: AwareDatetime | None = None
     autonomy_last_checked_at: AwareDatetime | None = None
+    autonomy_last_check_id: str | None = None
     autonomy_last_result: Literal[
         "waiting", "silent", "message", "error", "interrupted", "paused"
     ] = "waiting"

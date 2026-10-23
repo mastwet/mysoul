@@ -113,6 +113,7 @@ test("autonomous messages are labeled in the main conversation",async()=>{
     await until(()=>ui.document.getElementById("turn-initiative-1"));
     assert.match(ui.document.getElementById("turn-initiative-1").textContent,/主动发起/);
     assert.match(ui.document.getElementById("turn-initiative-1").textContent,/我想到一个具体建议。/);
+    assert.match(ui.document.getElementById("recent-messages").textContent,/主动.*我想到一个具体建议/);
   }finally{ui.close();}
 });
 
@@ -418,4 +419,20 @@ test("persona automatic toggle persists without discarding editor draft",async()
     assert.equal(ui.writes.at(-1).body.persona_enabled,false);
     assert.equal(d.getElementById("persona-identity").value,"unsaved draft");
   } finally {ui.close();}
+});
+
+test("autonomous failure and silence expose the persisted reason",async()=>{
+  const ui=await fixture();
+  try{
+    ui.server.state.autonomy_enabled=true;
+    ui.server.state.autonomy_last_result="error";
+    ui.server.initiative={outcome:"error",error:{code:"timeout",message:"模型请求超时，请稍后重试。"},reason:""};
+    await ui.poll();
+    await until(()=>ui.document.getElementById("initiative-detail")?.textContent.includes("模型请求超时"));
+    assert.match(ui.document.getElementById("initiative-status").textContent,/超时/);
+    ui.server.state.autonomy_last_result="silent";
+    ui.server.initiative={outcome:"silent",reason:"刚分享过这个话题，暂不重复。",error:null};
+    await ui.poll();
+    await until(()=>ui.document.getElementById("initiative-detail").textContent.includes("暂不重复"));
+  }finally{ui.close();}
 });

@@ -223,6 +223,7 @@ async def test_runtime_pause_during_a_check_suppresses_its_reply(tmp_path, chang
             item for item in soul.status()["interactions"] if item["choice"] == "initiative"
         ]
         assert soul.store.load_subject().autonomy_last_result == "paused"
+        assert soul.status()["initiative"]["outcome"] == "paused"
 
 
 async def test_three_minute_heartbeat_repeats_through_ticks_and_restart(tmp_path, monkeypatch):
@@ -278,3 +279,68 @@ async def test_previously_considered_maintenance_does_not_starve_due_heartbeat(t
         assert soul.store.load_subject().autonomy_last_result == "message"
         await soul.tick()
         assert len(model.contexts) == 1
+
+@pytest.mark.parametrize('outcome', ['silent', 'error', 'message'])
+async def test_each_initiative_retains_a_diagnostic_receipt(tmp_path, outcome):
+    class DiagnosticModel(ReplayModel):
+        async def decide(self, context, limits):
+            if outcome == 'error':
+                raise TimeoutError()
+            return ActivityDecision(
+                activity=Activity.CHAT if outcome == 'message' else Activity.REST,
+                                    chat_action='reply' if outcome == 'message' else 'silent',
+                                    reply='A new thought.' if outcome == 'message' else '',
+                                    rationale='No new topic after the last message.')
+
+    async with SoulService(Settings(data_dir=tmp_path), DiagnosticModel()) as soul:
+        state = soul.store.load_subject()
+        state.autonomy_enabled = True
+        state.next_initiative_at = now()
+        soul.store.save_transition(state.dispatch_epoch, state)
+        await soul.activities._main_chat_initiative()
+        receipt = soul.status().get('initiative')
+        assert receipt is not None
+        assert receipt['outcome'] == outcome
+        assert receipt['finished_at']
+        if outcome == 'error':
+            assert receipt['error']['code'] == 'timeout'
+        else:
+            assert receipt['reason'] == 'No new topic after the last message.'
+        assert len(soul.store.all('initiative_check')) == 1
+    async with SoulService(Settings(data_dir=tmp_path), ReplayModel()) as soul:
+        assert soul.status()['initiative'] == receipt
+
+async def test_cancelled_initiative_finishes_receipt_and_propagates(tmp_path):
+    import asyncio
+    entered = asyncio.Event()
+    class Blocked(ReplayModel):
+        async def decide(self, context, limits):
+            entered.set()
+            await asyncio.Event().wait()
+    async with SoulService(Settings(data_dir=tmp_path), Blocked()) as soul:
+        state = soul.store.load_subject()
+        state.autonomy_enabled = True
+        soul.store.save_transition(state.dispatch_epoch, state)
+        task = asyncio.create_task(soul.activities._main_chat_initiative())
+        await entered.wait()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert soul.status()['initiative']['outcome'] == 'interrupted'
+        assert soul.status()['initiative']['finished_at']
+
+
+async def test_restart_closes_orphaned_initiative_receipts(tmp_path):
+    async with SoulService(Settings(data_dir=tmp_path), ReplayModel()) as soul:
+        state = soul.store.load_subject()
+        state.autonomy_last_check_id = 'orphan'
+        state.autonomy_last_result = 'waiting'
+        soul.store.save_transition(state.dispatch_epoch, state)
+        soul.store.put('initiative_check', 'orphan', {
+            'id':'orphan', 'epoch':state.dispatch_epoch, 'started_at':now().isoformat(),
+            'finished_at':None,'outcome':'waiting','reason':'','error':None,
+        })
+    async with SoulService(Settings(data_dir=tmp_path), ReplayModel()) as soul:
+        assert soul.status()['initiative']['outcome'] == 'interrupted'
+        assert soul.status()['initiative']['finished_at']
+        assert soul.store.load_subject().autonomy_last_result == 'interrupted'

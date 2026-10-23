@@ -216,33 +216,57 @@ class ActivityRouter:
                 dedup_key="initiative:" + due.isoformat(),
             )
             soul.store.add_event(event)
+            state.autonomy_last_check_id = event.id
+            soul.store.save_transition(epoch, state)
+            self._record_initiative_check(event, epoch, "waiting")
             try:
                 context = await soul.context(
                     Scope(),
-                    "[main-chat initiative]\nReview recent owner messages for an active "
-                    "follow-up request or one concrete useful message.",
+                    "[main-chat initiative]\nAutonomous initiation is enabled by the owner. "
+                    "Initiate one useful, non-repetitive private message from shared interests, "
+                    "a continuing request, or a concrete thought worth sharing. "
+                    "You do not need a new owner message to begin a topic. "
+                    f"Current time: {instant.isoformat()}.",
                 )
                 context.instructions += (
-                    "\n[自主主聊天] 这是低频的主人私聊检查。"
-                    "只可依据主人消息、已确认记忆和公开人格。"
+                    "\n[自主主聊天] 主人已开启主动交流，这是一次自主发起机会。"
+                    "可以依据主人兴趣、共同经历、当前人格以及已有知识主动开启一个具体话题；"
+                    "即使上一句是自己说的，也不必一直等待主人回话。"
+                    "主人希望空闲时探索或分享时，可以提出一个具体观察、思考或有趣的问题；"
+                    "没有新外部事件不等于没有可分享的内容。已有知识和推测要如实表达，"
+                    "没有工具证据时不得声称刚浏览、查阅或发现了实时新闻。"
                     "先检查最近对话里是否有主人要求之后继续的持续请求（例如‘继续写，除非我叫停’）。"
                     "若有且后续没有主人暂停、取消或改口，就按原主题和要求推进下一段；一次只完成一个"
                     "有界部分，最多4000字符。不要把‘待会’或已经完成过一次回复当作授权失效。"
-                    "主人明确停止或暂停时必须服从。没有仍然有效的持续请求时，只有确有具体价值才发一条"
-                    "简短消息，否则选择休息。不要泛泛问候、臆测主人当下状况、创建任务、读新闻、反思或"
+                    "主人明确停止或暂停时必须服从。没有仍然有效的持续请求时，主动选择一个与主人"
+                    "兴趣相关的具体内容，写成自然简短的消息。避免重复刚说过的内容或连续追问；"
+                    "主人要求安静、没有可信内容或会重复打扰时可以休息，并说明具体原因。"
+                    "不要泛泛问候、臆测主人当下状况、创建任务、读新闻、反思或"
                     "调用工具。要发消息时设置activity=read_chat、chat_action=reply，并填写reply。"
                     "此检查没有QQ或外部发送权限。"
                 )
                 if not self._initiative_still_current(epoch):
+                    self._record_initiative_check(event, epoch, self._stopped_outcome())
                     return True
                 decision = await soul.life.choose([event], context)
-            except Exception:
-                if not self._initiative_still_current(epoch):
+            except asyncio.CancelledError:
+                self._record_initiative_check(event, epoch, "interrupted",
+                                              reason="自主检查已取消。")
+                self._finish_initiative("interrupted", epoch, Activity.REST)
+                raise
+            except Exception as exc:
+                current = self._initiative_still_current(epoch)
+                self._record_initiative_check(
+                    event, epoch, "error" if current else self._stopped_outcome(),
+                    error={"code": type(exc).__name__,
+                                                     "message": "自主检查未完成，请检查运行状态。"})
+                if not current:
                     return True
                 self._finish_initiative("error", epoch, Activity.REST)
                 raise
 
             if not self._initiative_still_current(epoch):
+                self._record_initiative_check(event, epoch, self._stopped_outcome())
                 return True
             text = decision.reply.strip()
             should_speak = (
@@ -268,10 +292,38 @@ class ActivityRouter:
                     soul._assistant_evidence(event, result),
                     enqueue=False,
                 )
+            failure = getattr(decision, "failure", None)
+            self._record_initiative_check(event, epoch, outcome, reason=decision.rationale,
+                                          error=failure.model_dump() if failure else None)
             self._finish_initiative(
                 outcome, epoch, Activity.CHAT if should_speak else Activity.REST
             )
             return True
+
+    def _stopped_outcome(self):
+        state = self.soul.store.load_subject()
+        return "paused" if state.autonomy_last_result == "paused" else "interrupted"
+
+    def recover_checks(self):
+        # Under the startup lease, no prior process can still complete these checks.
+        for receipt in self.soul.store.all("initiative_check"):
+            if receipt["outcome"] != "waiting":
+                continue
+            receipt.update(outcome="interrupted", finished_at=now().isoformat(),
+                           reason="服务重启，上次检查已中止。")
+            self.soul.store.put("initiative_check", receipt["id"], receipt)
+            state = self.soul.store.load_subject()
+            if state.autonomy_last_check_id == receipt["id"]:
+                state.autonomy_last_result = "interrupted"
+                state.activity = Activity.REST
+                self.soul.store.save_transition(state.dispatch_epoch, state)
+
+    def _record_initiative_check(self, event, epoch, outcome, *, reason="", error=None):
+        self.soul.store.put("initiative_check", event.id, {
+            "id": event.id, "epoch": epoch, "started_at": event.received_at.isoformat(),
+            "finished_at": now().isoformat() if outcome != "waiting" else None,
+            "outcome": outcome, "reason": reason, "error": error,
+        })
 
     def _finish_initiative(self, outcome, epoch, activity):
         state = self.soul.store.load_subject()

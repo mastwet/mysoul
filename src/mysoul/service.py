@@ -130,6 +130,7 @@ class SoulService:
     async def __aenter__(self):
         try:
             self.lease.acquire()
+            self.activities.recover_checks()
             self.persona.initialize()
             self._backfill_dialogue()
             self.cognition.sources.migrate_pending()
@@ -774,6 +775,8 @@ class SoulService:
             "send_enabled": self.settings.send_enabled,
             "persona": self.persona.current().model_dump(mode="json"),
             "cognition": self.cognition.status(),
+            "initiative": self.store.get(
+                "initiative_check", self.store.load_subject().autonomy_last_check_id or ""),
             "memory": self.memory_status(),
             "reflections": self.store.all("reflection"),
             "errors": self.store.all("job_error")[-20:],
