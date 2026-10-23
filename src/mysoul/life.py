@@ -36,14 +36,14 @@ class LifeController:
         self.lock = asyncio.Lock()
 
     async def choose(
-        self, events: list[Event], context: ContextBundle | None = None
+        self, events: list[Event], context: ContextBundle | None = None, *, on_admit=None
     ) -> ActivityDecision:
         if any(event.trust == "owner_command" for event in events):
-            return await self._choose(events, context)
+            return await self._choose(events, context, on_admit)
         async with self.lock:
-            return await self._choose(events, context)
+            return await self._choose(events, context, on_admit)
 
-    async def _choose(self, events, context):
+    async def _choose(self, events, context, on_admit=None):
         state = self.store.load_subject()
         advance_fatigue(state, self.settings, self.clock())
         owner = any(e.trust == "owner_command" for e in events)
@@ -93,6 +93,10 @@ class LifeController:
         reserve, attempts = reservation(self.model, context, limits)
         if budget_exceeded(state.tokens_used, reserve, self.settings.token_budget):
             return ActivityDecision(activity=Activity.REST, rationale="Context budget exhausted")
+        # A due wake can be withdrawn while context is assembled; no charge or
+        # model call is admitted until its durable claim succeeds.
+        if on_admit and on_admit() is False:
+            return ActivityDecision(activity=Activity.REST, rationale="Admission withdrawn")
         # Reserve maximum output tokens before inference, including failed requests.
         state.model_calls += attempts
         state.tokens_used += reserve
@@ -121,7 +125,7 @@ class LifeController:
         from mysoul.inner_voice import VoiceJournal
 
         VoiceJournal(self.store).record_decision(events, decision, state.dispatch_epoch)
-        if decision.memory_call:
+        if decision.memory_call or decision.runtime_call:
             # Read requests are intermediate decisions, not activity transitions.
             return decision
         if owner and decision.chat_action == "reply" and decision.reply:

@@ -8,6 +8,7 @@ from typing import Literal
 from pydantic import AwareDatetime, Field
 
 from mysoul.domain import (
+    TRANSIENT_TOOLS,
     Activity,
     ContextBundle,
     Contract,
@@ -117,14 +118,14 @@ class CognitiveStore:
         activity_body = activity.model_dump(mode="json", exclude={"final_note"})
         activity_body["effect_ids"] = [
             req.action_id for req, _ in self.store.effects_for_goal(goal.id)
-            if req.activity_id == activity_id and req.tool not in {"memory_search", "memory_get"}
+            if req.activity_id == activity_id and req.tool not in TRANSIENT_TOOLS
         ]
         text = json.dumps({"activity": activity_body,
                            "objective": goal.objective, "effects": [
                                {"id": req.action_id, "tool": req.tool, "outcome": res.outcome,
                                 "evidence_ref": res.evidence_ref, "error": res.error}
                                for req, res in self.store.effects_for_goal(goal.id)
-                               if req.tool not in {"memory_search", "memory_get"}
+                               if req.tool not in TRANSIENT_TOOLS
                            ]}, ensure_ascii=False)
         ident = f"outcome:{activity_id}:{activity.cursor}:{activity.status}"
         with self.store.transaction() as db:
@@ -140,7 +141,7 @@ class CognitiveStore:
                                  body, Scope.model_validate(context["scope"]), now())
 
             for request, result in self.store.effects_for_goal(goal.id):
-                if request.tool in {"memory_search", "memory_get"}:
+                if request.tool in TRANSIENT_TOOLS:
                     continue
                 if request.activity_id != activity_id or not Scope().admits(request.scope):
                     continue

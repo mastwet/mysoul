@@ -621,3 +621,17 @@ Review rulings retained after scratch-ledger cleanup:
 - 激活前停止并完整备份：`.local/backups/conversation-reset-20261023-224850/ui-redesign`，应用库 SHA256 一致；校验记录 `.local/conversation-reset-backup.json`。8767 已重启，自主开启/3分钟检查/既有本机测试与无限累计预算设置保留。
 - 真实浏览器核对设置会话入口、重置范围、确认与取消，未提交实际重置；运行会话版本仍为0、Recap117、人格2，MemPalace connected，已有“巨嘴鸟”中文检索返回1条。没有新增真实模型诊断回放。
 - 截图：`C:/Users/Administrator/Desktop/mysoul/.local/conversation-reset-20261023.png`。原用户标签页未重载，实际聊天未清空。
+
+
+## 2026-10-24：本体安排下一次自主唤醒
+
+- 新增单个持久化 `schedule_wakeup(after_seconds, reason, goal_id?)` 工具，30–86400秒。主人聊天、自主检查与 owner 工作任务共用；新安排替换旧安排，等待时覆盖默认间隔且不轮询模型。唤醒仍由同一本体决定活动及是否发言。
+- 稳定调用 ID 去重；主人优先、模式、疲劳、模型预算/上下文准入均保留未开始日程。关联目标取消、会话重置、自主关闭撤销安排。重启恢复未开始时间，已开始但中止的轮次不自动重放。回执不进入事实归档、Recap或人格来源；群聊与候选技能隔离。
+- RED/GREEN新增19项集成回归，覆盖替换、回放、普通聊天工具回执、工作检查点、准备期间与推理期间取消、预算预留不足、结果空间不足、重启前事务间隙、禁用/重置、候选隔离及界面状态。自主日程UI测试通过，实际页面只读验证当前默认时间与筛选。
+- 独立审查发现的五个边界问题均先复现后修复：预算未准入却消耗唤醒、工作回执不足却提交日程、重启未恢复原到期时间、上下文准备期间取消后仍调用模型、推理期间取消后仍发布。复查无未解决的范围内事项，且额外确认原任务取消不会删除本轮合法新建的独立日程。
+- 最终当前完整工作树：382 passed /10 skipped；UI58 passed；Ruff、JS syntax、diff check、uv offline build通过。外部跳过项不计通过。
+- 为避免混入其他会话的改动，另导出暂存区独立快照：366 passed /5 failed /9 skipped，UI51 passed，Ruff通过；新增19项均通过。五项失败已在未经本次修改的HEAD(1f4f7277)上逐项复现，均为既有上下文契约差异：archive_review原文查阅、cognition失败上下文，以及initiative_lanes的历史隔离、预算裁剪和最新发布优先。其他会话正在进行的Recap-only与原生MemPalace浏览器工作保留在工作树，不加入本次提交。
+- 真实模型只使用临时服务、公开合成文本，未加载正式历史、Recap或记忆。两次工具验收返回provider_error。基础诊断：模型列表HTTP200且配置模型存在，但不带工具/历史的公开Hello同样HTTP503。真实模型工具调用验收待网关恢复；没有将失败或跳过计为通过。本机详细记录位于主工作区`.local/scheduled-wakeup-audit/`。
+- 部署前停止8767服务并完整备份32个文件（应用库、检查点、模型配置和索引），所有SHA256一致：开发工作树`.local/backups/scheduled-wakeup-20261024-070233/ui-redesign`；校验清单在主工作区`.local/scheduled-wakeup-backup.json`。
+- 原端口8767已重启，保持自主开启、默认3分钟、本机测试免令牌和既有无限累计预算。MemPalace connected、待归档0、原中文查询返回2项，会话版本仍为1。没有人为写入正式日程、发送测试聊天或清空会话。浏览器仅使用临时后台验证标签，原用户标签页未重载。
+- 验收截图：`C:/Users/Administrator/Desktop/mysoul/.local/scheduled-wakeup-20261024.png`。使用与恢复说明：`docs/SCHEDULED_WAKEUP.md`。

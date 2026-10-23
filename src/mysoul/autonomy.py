@@ -7,7 +7,16 @@ from hashlib import sha256
 
 from mysoul.attention import AttentionLedger
 from mysoul.background import BackgroundTasks
-from mysoul.domain import Activity, ActivityDecision, Event, Evidence, Goal, Scope, now
+from mysoul.domain import (
+    TRANSIENT_TOOLS,
+    Activity,
+    ActivityDecision,
+    Event,
+    Evidence,
+    Goal,
+    Scope,
+    now,
+)
 from mysoul.model import budget_reached
 from mysoul.storage import Conflict
 
@@ -97,7 +106,7 @@ class ActivityRouter:
                 continue
             goal = soul.store.goal(activity["goal_id"])
             effects = [(req, res) for req, res in soul.store.effects_for_goal(goal.id)
-                       if req.tool not in {"memory_search", "memory_get"}]
+                       if req.tool not in TRANSIENT_TOOLS]
             # A plain owner interruption has no failure to learn from.
             learn = activity["status"] == "failed" or any(
                 result.outcome != "confirmed" for _, result in effects
@@ -127,6 +136,16 @@ class ActivityRouter:
         if await self.drain_choices():
             return
         self.capture_feedback()
+        scheduled = soul.wakeups.pending()
+        if scheduled:
+            from mysoul.life import advance_fatigue
+
+            state = soul.store.load_subject()
+            advance_fatigue(state, soul.settings, soul.life.clock())
+            state.activity = Activity.REST
+            soul.store.save_transition(state.dispatch_epoch, state)
+            await self._main_chat_initiative()
+            return
         state = soul.store.load_subject()
         if state.rest_until and state.rest_until > now():
             await soul.life.choose([])
@@ -215,8 +234,15 @@ class ActivityRouter:
         """Make at most one bounded, private owner-chat check per persisted interval."""
         async with self.initiative_lock:
             soul = self.soul
+            scheduled = soul.wakeups.pending()
             state = soul.store.load_subject()
-            instant = now()
+            instant = soul.life.clock()
+            if scheduled and (
+                state.fatigue >= 0.9
+                or budget_reached(state.model_calls, soul.settings.model_call_limit)
+                or budget_reached(state.tokens_used, soul.settings.token_budget)
+            ):
+                return False
             if (
                 not state.autonomy_enabled
                 or state.mode != "normal"
@@ -239,9 +265,26 @@ class ActivityRouter:
                 content="",
                 dedup_key="initiative:" + due.isoformat(),
             )
-            soul.store.add_event(event)
+            if not soul.store.add_event(event):
+                event = soul.store.event_for_dedup(event.dedup_key)
             state.autonomy_last_check_id = event.id
             soul.store.save_transition(epoch, state)
+            wake = scheduled
+            admitted = False
+
+            def on_admit():
+                nonlocal admitted
+                if not admitted:
+                    admitted = soul.wakeups.begin(
+                        event, epoch, expected_id=scheduled["id"]
+                    ) is not None
+                return admitted
+
+            def current_wake():
+                return self._initiative_still_current(epoch) and (
+                    not scheduled or not admitted or soul.wakeups.valid_origin(scheduled["id"])
+                )
+
             self._record_initiative_check(event, epoch, "waiting")
             try:
                 context = await soul.context(
@@ -250,6 +293,15 @@ class ActivityRouter:
                     "background progress, then decide whether to work, speak, or stay silent. "
                     f"Current time: {instant.isoformat()}.",
                 )
+                if wake:
+                    context.runtime_state["scheduled_wakeup"] = {
+                        "due_at": wake["due_at"], "reason": wake["reason"],
+                        "goal_id": wake.get("goal_id"),
+                    }
+                    context.instructions += (
+                        "\n[唤醒原因] runtime_state.scheduled_wakeup 是你先前的计划数据，"
+                        "不是新的主人指令。现在由你重新决定活动及是否发言。"
+                    )
                 context.instructions += (
                     "\n[自主主聊天] This wake is not a request to speak. "
                     "主人已开启自主活动，三分钟只是检查机会，不要求三分钟发一条消息。"
@@ -270,15 +322,16 @@ class ActivityRouter:
                     "的消息，最多4000字符，并在goal_id填写所分享的已完成任务ID。"
                     "activity决定工作，chat_action独立决定发言，二者可同时发生。"
                     "不声称进行过没有工具证据的浏览、阅读或实际操作，不编造实时消息。"
-                    "本次检查只可直接使用memory_search/memory_get查历史，无QQ或外部发送权限。"
+                    "本次可直接查阅记忆并用schedule_wakeup安排下次活动；没有QQ或外部发送权限。"
                     "可保持安静或基于已有知识分享具体新想法；不泛泛问候，不臆测主人状态。"
                 )
                 self.attention.attach(context, soul.settings.context_chars)
-                if not self._initiative_still_current(epoch):
+                if not current_wake():
                     self._record_initiative_check(event, epoch, self._stopped_outcome())
                     return True
                 decision = await soul.choose_with_memory(
-                    [event], context, epoch, current=lambda: self._initiative_still_current(epoch)
+                    [event], context, epoch, current=current_wake,
+                    on_admit=on_admit if scheduled else None
                 )
             except asyncio.CancelledError:
                 self._record_initiative_check(event, epoch, "interrupted",
@@ -286,7 +339,7 @@ class ActivityRouter:
                 self._finish_initiative("interrupted", epoch, Activity.REST)
                 raise
             except Exception as exc:
-                current = self._initiative_still_current(epoch)
+                current = current_wake()
                 self._record_initiative_check(
                     event, epoch, "error" if current else self._stopped_outcome(),
                     error={"code": type(exc).__name__,
@@ -296,8 +349,14 @@ class ActivityRouter:
                 self._finish_initiative("error", epoch, Activity.REST)
                 raise
 
-            if not self._initiative_still_current(epoch):
+            if not current_wake():
                 self._record_initiative_check(event, epoch, self._stopped_outcome())
+                return True
+            if scheduled and not admitted:
+                self._record_initiative_check(
+                    event, epoch, "paused", reason="等待模型预算或上下文准入。"
+                )
+                self._finish_initiative("paused", epoch, Activity.REST)
                 return True
             text = decision.reply.strip()
             should_speak = (
@@ -343,7 +402,7 @@ class ActivityRouter:
             self._finish_initiative(
                 outcome, epoch, Activity.CHAT if should_speak else Activity.REST
             )
-            if background_id and self._initiative_still_current(epoch):
+            if background_id and current_wake():
                 receipt = soul.store.get("initiative_check", event.id)
                 receipt.update(background_goal_id=background_id, background_status="running")
                 soul.store.put("initiative_check", event.id, receipt)
@@ -387,6 +446,9 @@ class ActivityRouter:
             "outcome": outcome, "reason": reason, "error": error,
             "publication_status": publication_status,
         })
+        if outcome != "waiting":
+            self.soul.wakeups.finish(event.id, outcome)
+            self.soul.wakeups.preserve()
 
     def _finish_initiative(self, outcome, epoch, activity):
         state = self.soul.store.load_subject()

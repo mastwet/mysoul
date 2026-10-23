@@ -184,7 +184,9 @@ class Executor:
                             "cursor": activity.cursor, "note": activity.progress_note,
                         }
                         context.instructions += (
-                            "\n[background step] Complete one bounded read-only step. "
+                            "\n[background step] Complete one bounded step with "
+                            "read-only data tools "
+                            "or schedule_wakeup. "
                             "Use retained results and progress; do not repeat confirmed tools. "
                             "Set done=true only when the completion criteria are met. "
                             "Your note is internal progress, not a message sent to the owner."
@@ -255,10 +257,10 @@ class Executor:
                     context = ContextBundle.model_validate(
                         self.store.get("activity_context", activity.id)
                     )
-                    from mysoul.recall import NAMES
+                    from mysoul.domain import TRANSIENT_TOOLS
 
                     tool = output["decision"].get("tool")
-                    recall = tool in NAMES
+                    recall = tool in TRANSIENT_TOOLS
                     evidence = Evidence(
                         **({"id": "recall:" + result["action_id"]} if recall else {}),
                         text=result.get("content", ""), scope=context.scope,

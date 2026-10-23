@@ -120,9 +120,15 @@ class SoulService:
         self.admission = self.executor.admission
         self.phone_cursor = (self.store.get("cursor", "phone") or {}).get("value")
         from mysoul.recall import ConversationRecall, MemoryTools
+        from mysoul.wakeup import WakeupStore
 
+        self.wakeups = WakeupStore(self.store, lambda: self.life.clock())
+        self.effects.register("schedule_wakeup", self._schedule_wakeup, {"owner"},
+                              schema=self.wakeups.spec()["parameters"])
         self.memory_tools = MemoryTools(lambda: self.memory)
-        self.recall = ConversationRecall(self.life, self.memory_tools, self.store, settings)
+        self.recall = ConversationRecall(
+            self.life, self.memory_tools, self.store, settings, wakeups=self.wakeups
+        )
         for spec in self.memory_tools.specs():
             self.effects.register(spec["name"], self._memory_read,
                                   {"owner", "group", "public"}, schema=spec["parameters"])
@@ -141,6 +147,7 @@ class SoulService:
     async def __aenter__(self):
         try:
             self.lease.acquire()
+            self.wakeups.recover()
             self.activities.recover_checks()
             from mysoul.timeline import TimelineStore
 
@@ -392,8 +399,8 @@ class SoulService:
         }
         return bundle
 
-    async def choose_with_memory(self, events, context, epoch, current=None):
-        decision = await self.recall.choose(events, context, epoch, current)
+    async def choose_with_memory(self, events, context, epoch, current=None, on_admit=None):
+        decision = await self.recall.choose(events, context, epoch, current, on_admit)
         if self.store.load_subject().dispatch_epoch == epoch:
             self.context_metrics = {
                 "payload_chars": len(context.payload()),
@@ -402,6 +409,26 @@ class SoulService:
                 "recap_version": context.recap_version, "recall_status": context.recall_status,
             }
         return decision
+
+    async def _schedule_wakeup(self, request):
+        import json
+
+        from mysoul.domain import ContextBundle
+        from mysoul.recall import exact_result
+
+        arguments = dict(request.arguments)
+        arguments.setdefault("goal_id", request.goal_id)
+        context = self.store.get("activity_context", request.activity_id)
+        scope = Scope.model_validate(context["scope"]) if context else request.scope
+        result = self.wakeups.schedule(
+            arguments, call_id=request.action_id, epoch=request.epoch, scope=scope,
+            accept=lambda receipt: context is not None and exact_result(
+                ContextBundle.model_validate(context), receipt, "schedule_wakeup",
+                "recall:" + request.action_id, self.settings.context_chars,
+            ) is not None,
+        )
+        return ToolResult(action_id=request.action_id, outcome="confirmed",
+                          content=json.dumps(result, ensure_ascii=False))
 
     async def _memory_read(self, request):
         from mysoul.domain import ContextBundle
@@ -912,6 +939,7 @@ class SoulService:
             ]
         return {
             "conversation": ConversationStore(self.store).current(),
+            "scheduled_wakeup": self.wakeups.public_pending(),
             "state": self.store.load_subject().model_dump(mode="json"),
             "activities": self.store.all("activity"),
             "goals": self.store.all("goal"),

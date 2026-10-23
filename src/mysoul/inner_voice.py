@@ -9,7 +9,7 @@ from fastapi import Depends, HTTPException, Query
 
 from mysoul.domain import Scope, now, uid
 
-Category = Literal["all", "initiative", "conversation", "task", "maintenance"]
+Category = Literal["all", "initiative", "conversation", "task", "maintenance", "schedule"]
 
 
 def brief(value, limit=1000):
@@ -26,7 +26,9 @@ class VoiceJournal:
         if not events or events[-1].scope != Scope():
             return
         event = events[-1]
-        if event.source == "local-initiative" and not decision.memory_call:
+        if event.source == "local-initiative" and not (
+            decision.memory_call or decision.runtime_call
+        ):
             return  # The initiative receipt already has the actual publication outcome.
         if event.source not in {"local-owner", "runtime", "local-initiative"}:
             return
@@ -41,7 +43,11 @@ class VoiceJournal:
                 "created_at": now().isoformat(),
                 "scope": Scope().model_dump(),
                 "category": "conversation",
-                "title": "记忆查阅决策" if decision.memory_call else "对话决策",
+                "title": "日程安排决策"
+                if decision.runtime_call
+                else "记忆查阅决策"
+                if decision.memory_call
+                else "对话决策",
                 "summary": brief(decision.rationale),
                 "status": "interrupted" if interrupted else "error" if failure else "decided",
                 "details": {
@@ -49,7 +55,9 @@ class VoiceJournal:
                     "activity": decision.activity,
                     "chat_action": decision.chat_action,
                     "event_id": event.id,
-                    "tool": decision.memory_call.tool if decision.memory_call else None,
+                    "tool": (decision.runtime_call or decision.memory_call).tool
+                    if decision.runtime_call or decision.memory_call
+                    else None,
                     "error_code": failure.code if failure else None,
                 },
             },
@@ -94,7 +102,7 @@ class VoiceJournal:
         return base64.urlsafe_b64encode(json.dumps([stamp, key]).encode()).decode().rstrip("=")
 
     def page(self, *, category="all", before=None, limit=30):
-        if category not in {"all", "initiative", "conversation", "task", "maintenance"}:
+        if category not in {"all", "initiative", "conversation", "task", "maintenance", "schedule"}:
             raise ValueError("Unknown category")
         if not 1 <= limit <= 100:
             raise ValueError("Limit out of range")
@@ -128,6 +136,10 @@ class VoiceJournal:
               FROM objects WHERE kind='decision_note'
                 AND json_extract(body,'$.scope.audience')='owner'
                 AND json_extract(body,'$.scope.conversation')='owner'
+              UNION ALL
+              SELECT 'schedule','schedule:'||id,body,'schedule',
+                strftime('%Y-%m-%dT%H:%M:%fZ',json_extract(body,'$.created_at'))
+              FROM objects WHERE kind='scheduled_wakeup'
               UNION ALL
               SELECT 'maintenance','maintenance:'||id,body,'maintenance',
                 strftime('%Y-%m-%dT%H:%M:%fZ',json_extract(body,'$.created_at'))
@@ -167,6 +179,19 @@ class VoiceJournal:
             if isinstance(error, dict):
                 details["error_code"] = brief(error.get("code"), 80)
                 details["error_message"] = brief(error.get("message"), 300)
+        elif source == "schedule":
+            title, summary, status = "唤醒安排", body.get("reason"), body.get("status")
+            details = {
+                name: body.get(name)
+                for name in (
+                    "due_at",
+                    "triggered_at",
+                    "finished_at",
+                    "goal_id",
+                    "epoch",
+                    "outcome",
+                )
+            }
         elif source == "maintenance":
             title, status = "记忆整理", body.get("status", "queued")
             summary = {
@@ -223,8 +248,14 @@ def register_inner_voice_routes(app, authorize):
         limit: int = Query(default=30, ge=1, le=100),
     ):
         try:
-            return VoiceJournal(app.state.soul.store).page(
-                category=category, before=before, limit=limit
-            )
+            soul = app.state.soul
+            pending = soul.wakeups.public_pending()
+            result = VoiceJournal(soul.store).page(category=category, before=before, limit=limit)
+            result["wakeup"] = {
+                "pending": pending,
+                "next_at": soul.store.load_subject().next_initiative_at,
+                "enabled": soul.store.load_subject().autonomy_enabled,
+            }
+            return result
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from None

@@ -155,6 +155,9 @@ class ConversationStore:
                 "UPDATE objects SET body=json_set(body,'$.status','recorded') WHERE "
                 "kind='task_feedback' AND json_extract(body,'$.status')='pending'"
             )
+            from mysoul.wakeup import WakeupStore
+
+            WakeupStore.cancel_in(db, "conversation_reset", instant)
             db.execute(
                 "INSERT INTO objects VALUES('conversation_archive',?,?)",
                 (str(boundary["revision"]), json.dumps(archive)),

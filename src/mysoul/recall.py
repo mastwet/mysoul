@@ -145,9 +145,25 @@ def admit_result(context, result, tool, ident, max_chars):
     return best
 
 
+def exact_result(context, result, tool, ident, max_chars):
+    from mysoul.domain import Evidence
+
+    evidence = Evidence(
+        id=ident,
+        scope=context.scope,
+        source=tool,
+        source_scopes=[context.scope],
+        text=serialized(result),
+    )
+    candidate = context.model_copy(deep=True)
+    candidate.step_results.append(evidence)
+    return evidence if len(candidate.payload()) <= max_chars else None
+
+
 class ConversationRecall:
-    def __init__(self, life, tools, store, settings):
+    def __init__(self, life, tools, store, settings, *, wakeups=None):
         self.life, self.tools, self.store, self.settings = life, tools, store, settings
+        self.wakeups = wakeups
 
     @staticmethod
     def failure(code, message):
@@ -159,7 +175,7 @@ class ConversationRecall:
             failure=ModelFailure(code=code, message=message),
         )
 
-    async def choose(self, events, context, epoch, current=None):
+    async def choose(self, events, context, epoch, current=None, on_admit=None):
         import asyncio
         from time import monotonic
 
@@ -172,6 +188,17 @@ class ConversationRecall:
                 current is None or current()
             )
 
+        def allow_runtime():
+            if (not self.wakeups or context.scope != Scope() or not events
+                    or not self.store.load_subject().autonomy_enabled):
+                return False
+            event = events[-1]
+            return (event.source == "local-owner" and event.trust == "owner_command") or (
+                event.source == "local-initiative"
+                and event.sender == "mysoul"
+                and self.store.load_subject().autonomy_last_check_id == event.id
+            )
+
         context.instructions += (
             "\n[可用只读记忆工具] 日常直接回答，不要每轮搜索。需要历史细节时可设置memory_call，"
             "其中tool和arguments遵循以下工具定义，此时reply留空、activity=rest。"
@@ -180,6 +207,14 @@ class ConversationRecall:
             "最终memory_call=null。剩余读取次数=[memory-left=3]，0时不可再读。工具定义："
             + serialized(self.tools.specs())
         )
+        if allow_runtime():
+            context.instructions += (
+                "\n[本体日程工具] 可通过runtime_call安排下次自主唤醒，工具定义："
+                + serialized(self.wakeups.spec())
+                + "。它替换默认检查时间，适合稍后继续或休息。不是对主人发言，也不是固定时间提醒。"
+                "与memory_call每次只选一项，工具请求时reply留空。收到回执后可以继续本轮并作最终决策。"
+                "同一轮记忆读取和日程操作合计最多3次；最终runtime_call和memory_call都为null。"
+            )
         from mysoul.attention import AttentionLedger
 
         AttentionLedger.fit(context, self.settings.context_chars)
@@ -194,14 +229,17 @@ class ConversationRecall:
                         context.instructions = context.instructions.replace(
                             f"[memory-left={4 - index}]", f"[memory-left={3 - index}]"
                         )
-                    decision = await self.life.choose(events, context)
+                    decision = await self.life.choose(events, context, on_admit=on_admit)
                     if not valid():
                         return ActivityDecision(activity=Activity.REST, rationale="Superseded")
-                    call = decision.memory_call
+                    if decision.memory_call and decision.runtime_call:
+                        return self.failure("invalid_response", "每次只能请求一个工具。")
+                    runtime = decision.runtime_call is not None
+                    call = decision.runtime_call or decision.memory_call
                     if call is None:
                         return decision
                     if index == 3:
-                        return self.failure("recall_limit", "本轮记忆查阅次数已用完，未继续读取。")
+                        return self.failure("recall_limit", "本轮工具调用次数已用完，未继续执行。")
                     state = self.store.load_subject()
                     if budget_reached(
                         state.model_calls, self.settings.model_call_limit
@@ -225,22 +263,45 @@ class ConversationRecall:
                             "context_budget", "当前上下文没有足够空间读取长期记忆。"
                         )
                     try:
-                        result = await asyncio.wait_for(
-                            self.tools.call(call.tool, call.arguments, context.scope),
-                            min(30, max(0.001, deadline - monotonic())),
-                        )
+                        if runtime:
+                            permitted = allow_runtime()
+                            result = (
+                                self.wakeups.schedule(
+                                    call.arguments,
+                                    call_id=ident,
+                                    epoch=epoch,
+                                    scope=context.scope,
+                                    accept=lambda result, tool=call.tool, ident=ident: (
+                                        exact_result(
+                                            context,
+                                            result,
+                                            tool,
+                                            ident,
+                                            self.settings.context_chars,
+                                        )
+                                        is not None
+                                    ),
+                                )
+                                if permitted
+                                else {"status": "denied"}
+                            )
+                        else:
+                            result = await asyncio.wait_for(
+                                self.tools.call(call.tool, call.arguments, context.scope),
+                                min(30, max(0.001, deadline - monotonic())),
+                            )
                     except TimeoutError:
                         result = {"status": "timeout"}
                     if not valid():
                         return ActivityDecision(activity=Activity.REST, rationale="Superseded")
-                    evidence = admit_result(
+                    evidence = (exact_result if runtime else admit_result)(
                         context, result, call.tool, ident, self.settings.context_chars
                     )
                     if evidence is None:
                         return self.failure("context_budget", "读取结果超过本轮上下文预算。")
                     context.step_results.append(evidence)
                     context.recall_status = json.loads(evidence.text)["status"]
-                    reads += 1
+                    reads += int(not runtime)
         except ContextOverflow:
             return self.failure("context_budget", "当前输入或更新后的 Recap 超过本轮上下文预算。")
         except TimeoutError:

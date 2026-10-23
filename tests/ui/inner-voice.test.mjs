@@ -116,3 +116,18 @@ test("leaving during a filter request restores the committed category",async()=>
     assert.match(f.d.getElementById("voice-list").textContent,/我先保持安静/);
   }finally{f.dom.window.close();}
 });
+
+
+test("self wakeup is visible with exact local time and a literal reason",async()=>{
+ let pending={due_at:"2026-10-24T12:34:56Z",reason:"<img src=x> 休息后探索",status:"scheduled"};
+ const f=fixture(async()=>({...page([{...entry("1"),category:"schedule",title:"唤醒安排",status:pending?"scheduled":"cancelled",details:{due_at:"2026-10-24T12:34:56Z"}}]),wakeup:{enabled:true,next_at:"2026-10-24T12:34:56Z",pending}}));
+ try{
+  f.voice.setActive(true);await f.voice.refresh();
+  const status=f.d.getElementById("voice-wakeup");assert.ok(status);
+  assert.match(status.textContent,/休息后探索/);assert.equal(status.querySelector("img"),null);
+  assert.match(f.d.getElementById("voice-list").textContent,/已安排/);
+  assert.match(f.d.getElementById("voice-list").textContent,/唤醒时间/);
+  pending=null;await f.voice.refresh();assert.match(status.textContent,/默认检查/);
+  assert.match(f.d.getElementById("voice-list").textContent,/已取消/);
+ }finally{f.dom.window.close();}
+});

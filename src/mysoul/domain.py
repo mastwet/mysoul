@@ -76,6 +76,11 @@ class MemoryCall(Contract):
     arguments: dict[str, Any] = Field(default_factory=dict)
 
 
+class RuntimeCall(Contract):
+    tool: Literal["schedule_wakeup"]
+    arguments: dict[str, Any] = Field(default_factory=dict)
+
+
 class BackgroundTaskRequest(Contract):
     objective: str = Field(min_length=1, max_length=2000)
     completion_criteria: str = Field(
@@ -83,7 +88,8 @@ class BackgroundTaskRequest(Contract):
     )
 
 
-BACKGROUND_TOOLS = {"memory_search", "memory_get", "read_news"}
+BACKGROUND_TOOLS = {"memory_search", "memory_get", "read_news", "schedule_wakeup"}
+TRANSIENT_TOOLS = {"memory_search", "memory_get", "schedule_wakeup"}
 
 
 class ActivityDecision(Contract):
@@ -98,6 +104,7 @@ class ActivityDecision(Contract):
     chat_action: Literal["read", "silent", "reply"] = "silent"
     reply: str = Field(default="", max_length=131072)
     memory_call: MemoryCall | None = None
+    runtime_call: RuntimeCall | None = None
     background_task: BackgroundTaskRequest | None = None
 
 

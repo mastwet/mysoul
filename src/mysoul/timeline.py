@@ -5,7 +5,7 @@ from datetime import datetime
 
 from pydantic import Field
 
-from mysoul.domain import ActivityRecord, Contract, Scope
+from mysoul.domain import TRANSIENT_TOOLS, ActivityRecord, Contract, Scope
 
 
 class TimelineItem(Contract):
@@ -112,7 +112,7 @@ class TimelineStore:
             request = ToolRequest.model_validate_json(request_json)
             if request.activity_id != activity.id or request.scope != Scope():
                 continue
-            if request.tool in {"memory_search", "memory_get"}:
+            if request.tool in TRANSIENT_TOOLS:
                 continue
             result = ToolResult.model_validate_json(result_json)
             if result.evidence_ref:

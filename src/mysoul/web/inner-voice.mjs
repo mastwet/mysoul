@@ -1,7 +1,7 @@
-const statuses={waiting:"检查中",silent:"保持安静",message:"已发言",error:"失败",interrupted:"已打断",paused:"已暂停",decided:"已决策",progress:"推进中",completed:"已完成",failed:"失败",superseded:"已打断",queued:"等待处理",running:"进行中"};
-const categories={initiative:"自主检查",conversation:"对话决策",task:"任务进度",maintenance:"记忆整理"};
-const fields={epoch:"调度轮次",activity:"选择活动",chat_action:"发言选择",event_id:"事件引用",tool:"工具",error_code:"错误类型",error_message:"错误说明",goal_id:"任务引用",activity_id:"执行引用",step:"执行步数",outcome:"执行结果",publication_status:"发布结果",background_goal_id:"后台任务引用",background_status:"后台状态",started_at:"开始时间",finished_at:"结束时间",stage:"整理阶段",attempts:"重试次数",next_attempt_at:"下次重试"};
-const values={rest:"休息",read_chat:"回应聊天",work:"工作",read_news:"阅读新闻",reflection:"反思",reply:"发言",silent:"安静",read:"阅读",duplicate:"已抑制重复",yield:"等待下次检查",confirmed:"已确认",not_sent:"未执行",unknown:"结果未知",in_flight:"执行中",failed:"失败"};
+const statuses={waiting:"检查中",silent:"保持安静",message:"已发言",error:"失败",interrupted:"已打断",paused:"已暂停",decided:"已决策",progress:"推进中",completed:"已完成",failed:"失败",superseded:"已打断",queued:"等待处理",running:"进行中",scheduled:"已安排",replaced:"已替换",fired:"已唤醒",cancelled:"已取消"};
+const categories={initiative:"自主检查",conversation:"对话决策",task:"任务进度",maintenance:"记忆整理",schedule:"自主日程"};
+const fields={due_at:"唤醒时间",triggered_at:"实际唤醒",epoch:"调度轮次",activity:"选择活动",chat_action:"发言选择",event_id:"事件引用",tool:"工具",error_code:"错误类型",error_message:"错误说明",goal_id:"任务引用",activity_id:"执行引用",step:"执行步数",outcome:"执行结果",publication_status:"发布结果",background_goal_id:"后台任务引用",background_status:"后台状态",started_at:"开始时间",finished_at:"结束时间",stage:"整理阶段",attempts:"重试次数",next_attempt_at:"下次重试"};
+const values={rest:"休息",read_chat:"回应聊天",work:"工作",read_news:"阅读新闻",reflection:"反思",reply:"发言",silent:"安静",read:"阅读",duplicate:"已抑制重复",yield:"等待下次检查",confirmed:"已确认",not_sent:"未执行",unknown:"结果未知",in_flight:"执行中",failed:"失败",autonomy_disabled:"自主功能已关闭",conversation_reset:"会话已重置",restart:"服务重启",cancelled:"关联任务已取消"};
 function timeText(value){const date=new Date(value);return Number.isNaN(date.valueOf())?String(value||""):date.toLocaleString("zh-CN",{hour12:false});}
 
 export function createInnerVoice({document,api}){
@@ -59,6 +59,11 @@ export function createInnerVoice({document,api}){
       const overlaps=page.items.some(entry=>records.has(entry.id));
       for(const entry of page.items)records.set(entry.id,entry);
       if(!loaded||mode==="older"||!overlaps){cursor=page.next_before;more=page.has_more;}
+      if(page.wakeup){
+        const wake=page.wakeup,line=get("voice-wakeup");
+        const text=!wake.enabled?"自主唤醒已暂停。":wake.pending?`本体已安排：${timeText(wake.pending.due_at)} · ${wake.pending.reason}`:wake.next_at?`下次默认检查：${timeText(wake.next_at)}`:"尚未安排下一次自主检查。";
+        if(line.textContent!==text)line.textContent=text;
+      }
       loaded=true;feedback.textContent="";render();
     }catch(error){
       if(ticket!==request||!active)return;

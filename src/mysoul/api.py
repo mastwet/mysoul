@@ -326,7 +326,8 @@ def create_app(settings: Settings | None = None, *, token=None, service=None):
         elif state.next_initiative_at is None:
             state.next_initiative_at = now()
         soul.store.save_transition(state.dispatch_epoch, state)
-        return state
+        soul.wakeups.preserve()
+        return soul.store.load_subject()
 
     async def background(coroutine):
         try:

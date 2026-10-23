@@ -287,7 +287,8 @@ function renderSnapshot(force=false) {
   const backgroundNote=initiative?.background_goal_id?" · 后台任务："+({running:"正在推进",yield:"已保存进度，等待下次检查",completed:"已完成，尚未自动发言",blocked:"需要处理后继续",owner:"已让出给主人",deferred:"等待合适时机",cancelled:"已取消",abandoned:"已放弃"}[initiative.background_status]||initiative.background_status||"等待处理"):"";
   $("initiative-detail").textContent=initiativeError?initiativeError.message:initiative?.outcome==="waiting"?"正在检查，完成后会显示决策原因。":(initiative?.reason||"最近一次检查尚无详细记录。")+backgroundNote;
   let initiativePauseReason=state.mode!=="normal"?modeNames[state.mode]+"模式":state.fatigue>=.9?"疲劳过高":limits.model_calls!==null&&limits.model_calls!==undefined&&state.model_calls>=limits.model_calls?"调用预算已用尽":limits.tokens!==null&&limits.tokens!==undefined&&state.tokens_used>=limits.tokens?"Token预算已用尽":"";
-  $("initiative-status").textContent=!state.autonomy_enabled?"自主发起已暂停 · "+initiativeOutcome:initiativePauseReason?"自主发起暂停 · "+initiativePauseReason+" · "+initiativeOutcome:"自主活动已开启 · 每 "+initiativeCadence+"检查 · "+initiativeOutcome;
+  const cadenceNote=snapshot.scheduled_wakeup?"本体安排 · "+new Date(snapshot.scheduled_wakeup.due_at).toLocaleString("zh-CN",{hour12:false})+"唤醒":"每 "+initiativeCadence+"检查";
+  $("initiative-status").textContent=!state.autonomy_enabled?"自主发起已暂停 · "+initiativeOutcome:initiativePauseReason?"自主发起暂停 · "+initiativePauseReason+" · "+initiativeOutcome:"自主活动已开启 · "+cadenceNote+" · "+initiativeOutcome;
   renderCognition();
   renderPersonaSections();
   $("persona-view").textContent=snapshot.persona.public;
