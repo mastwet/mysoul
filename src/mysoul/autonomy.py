@@ -158,6 +158,8 @@ class ActivityRouter:
         settled = wake and wake.get("admitted", True) and not expired
         if (not any(ready.values()) or settled) and await self._main_chat_initiative():
             return
+        if (not any(ready.values()) or settled) and await soul.compression.run_due():
+            return
         if (not any(ready.values()) or settled) and await soul.cognition.run_due():
             return
         if not any(ready.values()) or settled:
@@ -185,7 +187,8 @@ class ActivityRouter:
             soul.store.put("wake", signal, {"ready": ready, "admitted": False})
         await self.perform(decision, state.dispatch_epoch, key=signal, feedback=feedback)
         if decision.activity == Activity.REST:
-            await soul.cognition.run_due()
+            if not await soul.compression.run_due():
+                await soul.cognition.run_due()
 
     async def _main_chat_initiative(self):
         """Make at most one bounded, private owner-chat check per persisted interval."""

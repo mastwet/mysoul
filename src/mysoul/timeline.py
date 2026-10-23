@@ -88,6 +88,32 @@ class TimelineStore:
         ).fetchone()
         if not context or json.loads(context[0]).get("scope") != Scope().model_dump():
             return
+        from mysoul.domain import Evidence, ToolRequest, ToolResult
+
+        effects = []
+        for request_json, result_json in db.execute(
+            "SELECT request,result FROM effects"
+        ).fetchall():
+            request = ToolRequest.model_validate_json(request_json)
+            if request.activity_id != activity.id or request.scope != Scope():
+                continue
+            result = ToolResult.model_validate_json(result_json)
+            if result.evidence_ref:
+                evidence = db.execute(
+                    "SELECT body FROM evidence WHERE id=?", (result.evidence_ref,)
+                ).fetchone()
+                if evidence and not Evidence.model_validate_json(evidence[0]).permitted(Scope()):
+                    continue
+            effects.append(
+                {
+                    "action_id": request.action_id,
+                    "tool": request.tool,
+                    "outcome": result.outcome,
+                    "content": result.content,
+                    "evidence_ref": result.evidence_ref,
+                    "error": result.error,
+                }
+            )
         cls.upsert_in(
             db,
             "task:" + goal.id,
@@ -104,6 +130,8 @@ class TimelineStore:
                 "result": activity.final_note,
                 "cursor": activity.cursor,
                 "effect_ids": activity.effect_ids,
+                "effects": effects,
+                "context_refs": activity.context_refs,
             },
         )
 

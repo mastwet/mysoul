@@ -454,7 +454,10 @@ class CognitiveService:
                     if run.recap_result is None:
                         context = self.context(run, (
                             "[recap] Write a complete private Recap in note. done=true, no tools. "
-                            "Preserve durable decisions, corrections and unfinished commitments. "
+                            "Maintain a concise current working summary. "
+                            "Do not reproduce a full historical archive. "
+                            "Historical details have separate traceable archives. Preserve current "
+                            "decisions, corrections, relationships and unfinished commitments. "
                             "Cite supplied evidence IDs. Keep user facts distinct from assistant "
                             "fiction and model inferences. Failures are failures, not successes. "
                             "Offsets mark partial inputs; never invent suffixes. "

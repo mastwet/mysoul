@@ -126,6 +126,9 @@ class SoulService:
         from mysoul.cognition import CognitiveService
 
         self.cognition = CognitiveService(self)
+        from mysoul.compression import CompressionService
+
+        self.compression = CompressionService(self)
 
     async def __aenter__(self):
         try:
@@ -266,14 +269,74 @@ class SoulService:
 
     async def context(self, scope, task=""):
         pending = []
-        if scope.audience == "owner":
-            for source in self.store.all("cognitive_source"):
-                if not source.get("cleared") and source["covered"] < source["total"]:
-                    pending.append(self.store.evidence(source["id"]))
-        tail = self.cognition.policy().tail_turns
+        archived = []
+        covered_refs = set()
         history = self.dialogue_history(scope)
-        if scope.audience == "owner":
+        if scope == Scope():
+            from datetime import datetime
+
+            frontier = self.compression.archives.frontier(scope)
+            tail = self.compression.policy().keep_recent
             history = history[-tail:] if tail else []
+            history_ids = {m.event_id for turn in history for m in turn}
+            for node in frontier:
+                rows = self.store.db.execute(
+                    "SELECT id,source_id FROM timeline WHERE seq BETWEEN ? AND ?",
+                    (node.first_seq, node.last_seq),
+                ).fetchall()
+                for _ident, source_id in rows:
+                    covered_refs.update(
+                        {
+                            source_id,
+                            "reply:" + source_id,
+                            "experience:" + source_id + ":user",
+                            "experience:" + source_id + ":assistant",
+                            "experience:" + source_id + ":failure",
+                        }
+                    )
+                task_rows = self.store.db.execute(
+                    "SELECT body FROM timeline WHERE kind='task' AND seq BETWEEN ? AND ?",
+                    (node.first_seq, node.last_seq),
+                ).fetchall()
+                import json
+
+                for (task_body,) in task_rows:
+                    task_data = json.loads(task_body)
+                    covered_refs.add(task_data["activity_id"])
+                    covered_refs.update(task_data.get("context_refs", []))
+                    covered_refs.update(
+                        e["evidence_ref"]
+                        for e in task_data.get("effects", [])
+                        if e.get("evidence_ref")
+                    )
+                if node.level == 0:
+                    value = json.loads(node.text)
+                    if value["source_id"].removeprefix("chat:") in history_ids:
+                        continue
+                    if value["body"].get("pending"):
+                        continue
+                if len(node.text) > 131072:
+                    raise ContextOverflow("Required archive source needs background compression")
+                archived.append(
+                    Evidence(
+                        id=node.id,
+                        text=node.text,
+                        scope=scope,
+                        source=f"archive:L{node.level}",
+                        source_scopes=[scope],
+                        created_at=datetime.fromisoformat(node.start_time),
+                    )
+                )
+            for source in self.store.all("cognitive_source"):
+                if (
+                    not source.get("cleared")
+                    and source["covered"] < source["total"]
+                    and source["id"] not in covered_refs
+                    and source["event_id"] not in covered_refs
+                ):
+                    pending.append(self.store.evidence(source["id"]))
+        elif scope.audience == "owner":
+            history = history[-self.cognition.policy().tail_turns :]
         profile = self.persona.current()
         bundle = await ContextAssembler(
             self.recap,
@@ -282,6 +345,8 @@ class SoulService:
             persona_instructions=profile.instructions(scope),
             history=history,
             required_evidence=pending,
+            archive_evidence=archived,
+            covered_refs=covered_refs,
             required_history=scope.audience == "owner",
         ).build(scope, ContextBudget(max_chars=self.settings.context_chars))
         bundle.persona_version = profile.version
@@ -309,9 +374,11 @@ class SoulService:
         turns = []
         for result_json, event_json in reversed(rows):
             result, event = json.loads(result_json), Event.model_validate_json(event_json)
-            turn = [] if event.source == "local-initiative" else [
-                ConversationMessage(role="user", content=event.content, event_id=event.id)
-            ]
+            turn = (
+                []
+                if event.source == "local-initiative"
+                else [ConversationMessage(role="user", content=event.content, event_id=event.id)]
+            )
             if self._assistant_evidence(event, result):
                 turn.append(
                     ConversationMessage(role="assistant", content=result["text"], event_id=event.id)
@@ -349,7 +416,11 @@ class SoulService:
                     ).fetchone()
                 if not present:
                     self.store.record_interaction(
-                        event, result, reply, enqueue=False, capture=False,
+                        event,
+                        result,
+                        reply,
+                        enqueue=False,
+                        capture=False,
                     )
 
     async def _draft(self, request):
@@ -622,10 +693,9 @@ class SoulService:
         state = self.store.load_subject()
         if state.dispatch_epoch != epoch:
             raise Conflict("Reflection superseded during context preparation")
-        if (
-            budget_exceeded(state.model_calls, attempts, self.settings.model_call_limit)
-            or budget_exceeded(state.tokens_used, reserve, self.settings.token_budget)
-        ):
+        if budget_exceeded(
+            state.model_calls, attempts, self.settings.model_call_limit
+        ) or budget_exceeded(state.tokens_used, reserve, self.settings.token_budget):
             raise Conflict("Reflection budget exhausted")
         state.activity = Activity.REFLECT
         state.model_calls += attempts
@@ -726,10 +796,9 @@ class SoulService:
             )
             reserve, attempts = reservation(model, context, limits)
             state = self.store.load_subject()
-            if (
-                budget_exceeded(state.model_calls, attempts, self.settings.model_call_limit)
-                or budget_exceeded(state.tokens_used, reserve, self.settings.token_budget)
-            ):
+            if budget_exceeded(
+                state.model_calls, attempts, self.settings.model_call_limit
+            ) or budget_exceeded(state.tokens_used, reserve, self.settings.token_budget):
                 raise Conflict("Model probe budget exhausted")
             state.model_calls += attempts
             state.tokens_used += reserve
@@ -778,8 +847,10 @@ class SoulService:
             "send_enabled": self.settings.send_enabled,
             "persona": self.persona.current().model_dump(mode="json"),
             "cognition": self.cognition.status(),
+            "compression": self.compression.status(),
             "initiative": self.store.get(
-                "initiative_check", self.store.load_subject().autonomy_last_check_id or ""),
+                "initiative_check", self.store.load_subject().autonomy_last_check_id or ""
+            ),
             "memory": self.memory_status(),
             "reflections": self.store.all("reflection"),
             "errors": self.store.all("job_error")[-20:],

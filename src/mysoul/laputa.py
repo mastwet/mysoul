@@ -94,19 +94,28 @@ class RecapStore:
                     if source.get("cleared") or source["covered"] != part.start:
                         raise Conflict("Source coverage changed")
                     source["covered"] = part.end
-                    db.execute("UPDATE objects SET body=? WHERE kind='cognitive_source' AND id=?",
-                               (json.dumps(source), part.source_id))
+                    db.execute(
+                        "UPDATE objects SET body=? WHERE kind='cognitive_source' AND id=?",
+                        (json.dumps(source), part.source_id),
+                    )
                     for ref in (source["event_id"], "reply:" + source["event_id"]):
-                        db.execute("UPDATE objects SET body=json_set(body,'$.status','managed') "
-                                   "WHERE kind='recap_segment' AND id=?", (ref,))
+                        db.execute(
+                            "UPDATE objects SET body=json_set(body,'$.status','managed') "
+                            "WHERE kind='recap_segment' AND id=?",
+                            (ref,),
+                        )
                 run.stage = "reflect"
                 run.recap_published_version = version.version
                 run.receipts.append("reconcile")
-                db.execute("UPDATE objects SET body=? WHERE kind='cognitive_run' AND id=?",
-                           (run.model_dump_json(), run.id))
+                db.execute(
+                    "UPDATE objects SET body=? WHERE kind='cognitive_run' AND id=?",
+                    (run.model_dump_json(), run.id),
+                )
             if clear:
-                db.execute("UPDATE objects SET body=json_set(body,'$.cleared',1) "
-                           "WHERE kind='cognitive_source'")
+                db.execute(
+                    "UPDATE objects SET body=json_set(body,'$.cleared',1) "
+                    "WHERE kind='cognitive_source'"
+                )
                 db.execute(
                     "UPDATE objects SET body=json_set(body,'$.status','cleared') "
                     "WHERE kind='recap_segment' AND json_extract(body,'$.status')='pending'"
@@ -173,10 +182,9 @@ async def consolidate_recap(soul, expected_epoch):
         max_tokens=soul.settings.model_output_limit, timeout=soul.settings.request_timeout
     )
     reserve, attempts = reservation(soul.model, context, limits, [])
-    if (
-        budget_exceeded(state.model_calls, attempts, soul.settings.model_call_limit)
-        or budget_exceeded(state.tokens_used, reserve, soul.settings.token_budget)
-    ):
+    if budget_exceeded(
+        state.model_calls, attempts, soul.settings.model_call_limit
+    ) or budget_exceeded(state.tokens_used, reserve, soul.settings.token_budget):
         raise Conflict("Recap synthesis budget exhausted")
     state.model_calls += attempts
     state.tokens_used += reserve
@@ -203,11 +211,15 @@ class ContextAssembler:
         persona_instructions="A helpful companion.",
         history=(),
         required_evidence=(),
+        archive_evidence=(),
+        covered_refs=(),
         required_history=False,
     ):
         self.recap, self.memory, self.task = recap, memory, task
         self.persona_instructions = persona_instructions
         self.history = history
+        self.archive_evidence = list(archive_evidence)
+        self.covered_refs = set(covered_refs)
         self.required_evidence = required_evidence
         self.required_history = required_history
 
@@ -227,6 +239,7 @@ class ContextAssembler:
         bundle.recap_version = version.version
         bundle.recap_invalidation_epoch = version.invalidation_epoch
         bundle.evidence = list(self.required_evidence)
+        bundle.archives = [e for e in self.archive_evidence if e.permitted(scope)]
         if len(bundle.payload()) > budget.max_chars:
             raise ContextOverflow("Required context and raw sources exceed context budget")
         # Most recent whole turns first for admission; emit them chronologically.
@@ -249,12 +262,15 @@ class ContextAssembler:
         if len(bundle.payload()) > budget.max_chars:
             raise ContextOverflow("Committed context changed beyond admission budget")
         for hit in hits:
-            if hit.id in {e.id for e in bundle.evidence} or not hit.permitted(scope):
+            if (
+                hit.id in self.covered_refs
+                or hit.id in {e.id for e in bundle.evidence}
+                or not hit.permitted(scope)
+            ):
                 continue
             history_events = {message.event_id for message in bundle.history}
             if hit.id in history_events or (
-                hit.source == "assistant-reply"
-                and hit.id.removeprefix("reply:") in history_events
+                hit.source == "assistant-reply" and hit.id.removeprefix("reply:") in history_events
             ):
                 continue
             candidate = bundle.model_copy(deep=True)

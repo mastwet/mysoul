@@ -202,6 +202,7 @@ class ContextBundle(Contract):
     recap_invalidation_epoch: int = 0
     evidence: list[Evidence] = Field(default_factory=list)
     history: list[ConversationMessage] = Field(default_factory=list)
+    archives: list[Evidence] = Field(default_factory=list)
     step_results: list[Evidence] = Field(default_factory=list)
     skill: str = ""
     recall_status: str = "available"

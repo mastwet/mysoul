@@ -143,15 +143,26 @@ class ArchiveStore:
         nodes = self.frontier(Scope())
         if not policy.enabled or not nodes:
             return None
-        pressure = (
-            sum(len(n.text) for n in nodes) + reserved_chars >= budget_chars * policy.high_water
-        )
+        size = sum(len(n.text) for n in nodes) + reserved_chars
+        drain = self.store.get("archive_drain", "owner") or {}
+        pressure = drain.get("active", False) and drain.get("policy_version") == policy.version
+        if size >= budget_chars * policy.high_water:
+            pressure = True
+        if size <= budget_chars * policy.low_water:
+            pressure = False
+        updated = {"active": pressure, "policy_version": policy.version}
+        if drain != updated:
+            self.store.put("archive_drain", "owner", updated)
         raw = [n for n in nodes if n.level == 0]
         protected = {n.id for n in raw[-policy.keep_recent :]} if policy.keep_recent else set()
         groups = [list(g) for _, g in groupby(nodes, key=lambda n: n.level)]
         candidates = []
         for group in groups:
-            if group[0].level > 0 and (len(group) >= policy.upper_trigger or pressure):
+            upper_pressure = pressure and (
+                len(group) >= 2
+                or len(group[0].text) > max(256, budget_chars * policy.low_water - reserved_chars)
+            )
+            if group[0].level > 0 and (len(group) >= policy.upper_trigger or upper_pressure):
                 candidates.append(group[: policy.upper_batch])
         if not candidates:
             for group in groups:
