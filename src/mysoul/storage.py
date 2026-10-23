@@ -255,14 +255,24 @@ class StateStore:
 
     def recover_effects(self):
         with self.transaction() as db:
-            for ident, body in db.execute("SELECT id,result FROM effects").fetchall():
+            from mysoul.memory import READ_ONLY_MEMORY_TOOLS
+
+            rows = db.execute("SELECT id,request,result FROM effects").fetchall()
+            for ident, request, body in rows:
                 result = ToolResult.model_validate_json(body)
-                if result.outcome == "in_flight":
+                readonly = json.loads(request)["tool"] in READ_ONLY_MEMORY_TOOLS
+                if readonly and result.outcome in {"in_flight", "unknown"}:
+                    result.outcome = "confirmed"
+                    result.content = json.dumps({"status": "interrupted"})
+                    result.error = "Readonly lookup interrupted; safe to request a fresh read"
+                elif result.outcome == "in_flight":
                     result.outcome = "unknown"
                     result.error = "Process stopped before receipt; reconcile before retry"
-                    db.execute(
-                        "UPDATE effects SET result=? WHERE id=?", (result.model_dump_json(), ident)
-                    )
+                else:
+                    continue
+                db.execute(
+                    "UPDATE effects SET result=? WHERE id=?", (result.model_dump_json(), ident)
+                )
 
     def add_evidence(self, evidence: Evidence):
         with self.transaction() as db:

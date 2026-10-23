@@ -6,6 +6,8 @@ from typing import Protocol
 
 from mysoul.domain import Evidence, Scope
 
+READ_ONLY_MEMORY_TOOLS = frozenset({"memory_search", "memory_get"})
+
 
 class MemoryUnavailable(RuntimeError):
     pass

@@ -415,7 +415,10 @@ class SoulService:
         goal = self.store.goal(request.goal_id)
         if (self.store.load_subject().dispatch_epoch != request.epoch
                 or goal.cancelled or goal.status != "active"):
-            return ToolResult(action_id=request.action_id, outcome="not_sent", error="Superseded")
+            return ToolResult(
+                action_id=request.action_id, outcome="confirmed",
+                content='{"status":"interrupted"}', error="Superseded",
+            )
         evidence = admit_result(context, result, request.tool, "recall:" + request.action_id,
                                 self.settings.context_chars)
         if evidence is None:

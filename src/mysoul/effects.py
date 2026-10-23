@@ -1,7 +1,9 @@
 import asyncio
+import json
 from collections.abc import Awaitable, Callable
 
 from mysoul.domain import ToolRequest, ToolResult, now
+from mysoul.memory import READ_ONLY_MEMORY_TOOLS
 from mysoul.storage import Conflict, StateStore
 
 
@@ -87,14 +89,35 @@ class EffectDispatcher:
                 self.store.record_result(
                     ToolResult(
                         action_id=request.action_id,
-                        outcome="unknown",
+                        outcome="confirmed"
+                        if request.tool in READ_ONLY_MEMORY_TOOLS
+                        else "unknown",
+                        content=(
+                            json.dumps({"status": "interrupted"})
+                            if request.tool in READ_ONLY_MEMORY_TOOLS
+                            else ""
+                        ),
                         error="Cancelled after dispatch",
                     )
                 )
                 raise
             except Exception as exc:
+                readonly = request.tool in READ_ONLY_MEMORY_TOOLS
                 result = ToolResult(
-                    action_id=request.action_id, outcome="unknown", error=type(exc).__name__
+                    action_id=request.action_id,
+                    outcome="confirmed" if readonly else "unknown",
+                    content=(
+                        json.dumps(
+                            {
+                                "status": "timeout"
+                                if isinstance(exc, TimeoutError)
+                                else "unavailable"
+                            }
+                        )
+                        if readonly
+                        else ""
+                    ),
+                    error=type(exc).__name__,
                 )
             self.store.record_result(result)
             return result

@@ -78,13 +78,17 @@ class LifeController:
         refresh_recap_context(self.store, context)
         if len(context.payload()) > self.settings.context_chars:
             raise ContextOverflow("Required context exceeds admission budget")
-        context.instructions += (
+        mode_instruction = (
             "\nPrefer bounded goals over incidental chat."
             if state.mode == "focused"
             else "\nPrefer silence unless directly addressed."
             if state.mode == "quiet"
             else ""
         )
+        if mode_instruction and mode_instruction not in context.instructions:
+            context.instructions += mode_instruction
+        if len(context.payload()) > self.settings.context_chars:
+            raise ContextOverflow("Mode instructions exceed admission budget")
         # Reserve after final context admission, including any mode instructions.
         reserve, attempts = reservation(self.model, context, limits)
         if budget_exceeded(state.tokens_used, reserve, self.settings.token_budget):

@@ -526,3 +526,58 @@ Review rulings retained after scratch-ledger cleanup:
   and preserved. The final MemPalace regression runs use an isolated snapshot of
   base `a3fca93` plus only this feature's changes. The commit stages only the three
   MemPalace service hunks; it does not include the concurrent context changes.
+
+
+### Automatic archive with on-demand recall (2026-10-23)
+
+- Context assembly no longer invokes Memory.search. Shared tools expose scoped
+  300-character previews (default5/max10) and paginated original reads
+  (default2000/max4000). Old model decisions remain valid without memory_call.
+- Ordinary chat, group chat and private initiative can explicitly request a read,
+  receive bounded historical data and answer. Ordinary chat/initiative permit at
+  most3 reads plus one closing decision under one request deadline and durable
+  call/token admission. Work uses the existing goal/checkpoint/effect contracts.
+- Regression coverage includes zero implicit calls, exact search/get/answer,
+  whole-turn timeout, exhausted budget, group actual provider-payload canaries,
+  owner interruption while a read is in flight, escaped content admission,
+  Recap growth during read, explicit failure states, read limit, initiative read,
+  candidate isolation and crash/restart without repeated lookup/result append.
+  Memory read results/logs are excluded from evidence/outbox/cognitive sources and
+  timeline compression inputs; ordinary generated answers remain normal experiences.
+- Real configured gemini-3.8-flash-high through localhost8045/v1, with a full
+  MemPalace engine on an independent temporary index, completed
+  **memory_search -> memory_get -> answer**, exactly `ECHO-739-BLUE`, in
+  **3 model calls /30.84 seconds**. Only public synthetic fixture content and a
+  fresh default persona/empty Recap were used; no ordinary private chat was replayed.
+  Sanitized local report:
+  `C:/Users/Administrator/Desktop/mysoul/.local/on-demand-public-acceptance/result.json`.
+- Initial context/autonomy/compression edits from another desktop conversation remain
+  in the checkout and are not silently committed with this feature. Shared files use
+  scoped staging. Their old automatic-recall test assertions were adapted locally;
+  the combined working tree is the target of full regression/deployment checks.
+
+- One fresh final reviewer found two Important issues: the third result could consume
+  closing-instruction space, and cancelled/unfinished worker reads inherited external
+  unknown-effect semantics. Both were reproduced RED with6 regressions (including
+  normal/focused/quiet modes). The fixed-size counter and idempotent mode suffix now
+  preserve closing space; readonly failure/recovery receipts are acknowledged statuses
+  and support continuation. QQ/other unknown effects retain no-resend semantics.
+
+- Final reviewed working tree: **324 Python passed,9 external skips in33.37s**;
+  **36 UI tests passed**, clean Ruff/JS syntax/source+wheel builds/whitespace.
+  The2 real MemPalace cases passed separately in17.14s on forced temporary indexes.
+  Remaining external skips are not successful release gates.
+- Final public model/engine replay again completed search/get/answer exactly in
+  **3 calls /32.94s**. A separate ordinary public greeting used **1 model call,
+  0 searches and0 gets**. Final reports live in the ignored primary-workspace
+  `.local/on-demand-public-acceptance-final/result.json` and `direct-result.json`.
+- Actual8767 subject was stopped only after its active maintenance finished, copied
+  in full (including index), and restarted with unchanged model, tokenless local-test,
+  unlimited cumulative budgets and three-minute initiative. Database SHA256 matched
+  its backup: `.local/backups/on-demand-memory-reviewed-20261023-185925/ui-redesign`.
+  Restart backfilled17 previously retained records, reaching **392 confirmed /0
+  pending**. Actual explicit Chinese search returned6 source records including the
+  retained toucan original. No test message/fixture entered actual daily chat/index.
+- Both Important review findings were fixed in one pass;6 regression failures became
+  green. No unresolved Critical/Important findings or deferred Minor findings remain
+  within the reviewed scope. Other existing desktop-context changes remain preserved.

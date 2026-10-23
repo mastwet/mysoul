@@ -395,3 +395,263 @@ async def test_candidate_cannot_read_parent_memory(tmp_path):
             ],
         ).run(proposal.id)
         assert result["candidate"][0]["outcomes"] == ["not_sent"]
+
+
+async def test_large_memory_text_fits_actual_escaped_context_budget(tmp_path):
+    from mysoul.domain import ActivityDecision
+
+    class Model:
+        calls = 0
+
+        async def decide(self, context, limits):
+            assert len(context.payload()) <= 4096
+            self.calls += 1
+            if self.calls == 1:
+                return ActivityDecision(
+                    activity="rest",
+                    memory_call={
+                        "tool": "memory_get",
+                        "arguments": {"ref": "long", "length": 4000},
+                    },
+                )
+            part = json.loads(context.step_results[-1].text)
+            assert part["truncated"] and 0 < len(part["text"]) < 4000
+            assert part["next_offset"] == len(part["text"])
+            return ActivityDecision(activity="read_chat", chat_action="reply", reply="已读取一部分")
+
+    async with SoulService(
+        Settings(data_dir=tmp_path, context_chars=4096, memory_backend="local"), Model()
+    ) as soul:
+        soul.store.add_evidence(Evidence(id="long", text='"\\\n中文' * 8000))
+        result = await soul.owner_message("查阅长记录")
+        assert result["text"] == "已读取一部分"
+
+
+async def test_recap_growth_during_lookup_returns_explicit_context_failure(tmp_path):
+    from mysoul.domain import ActivityDecision
+
+    class Model:
+        async def decide(self, *args):
+            return ActivityDecision(
+                activity="rest",
+                memory_call={"tool": "memory_search", "arguments": {"query": "old"}},
+            )
+
+    async with SoulService(Settings(data_dir=tmp_path, context_chars=4096), Model()) as soul:
+
+        class Memory:
+            async def search(self, *args):
+                soul.recap.publish(0, "R" * 6000, [])
+                return []
+
+        soul.memory = Memory()
+        result = await soul.owner_message("查一下旧记录")
+        assert result["error"]["code"] == "context_budget"
+        assert soul.store.evidence(result["event_id"]).text == "查一下旧记录"
+
+
+async def test_heartbeat_can_explicitly_recall_before_one_message(tmp_path):
+    from mysoul.domain import ActivityDecision, now
+
+    class Model:
+        calls = 0
+
+        async def decide(self, context, limits):
+            self.calls += 1
+            if self.calls == 1:
+                return ActivityDecision(
+                    activity="rest", memory_call={"tool": "memory_get", "arguments": {"ref": "old"}}
+                )
+            assert json.loads(context.step_results[-1].text)["text"] == "共同话题是植物"
+            return ActivityDecision(
+                activity="read_chat", chat_action="reply", reply="来聊聊植物吧。"
+            )
+
+    async with SoulService(Settings(data_dir=tmp_path, memory_backend="local"), Model()) as soul:
+        soul.store.add_evidence(Evidence(id="old", text="共同话题是植物"))
+        state = soul.store.load_subject()
+        state.autonomy_enabled, state.next_initiative_at = True, now()
+        soul.store.save_transition(state.dispatch_epoch, state)
+        await soul.activities._main_chat_initiative()
+        interactions = soul.store.all("interaction")
+        assert len(interactions) == 1 and interactions[0]["text"] == "来聊聊植物吧。"
+        assert soul.model.calls == 2
+        assert not soul.store.all("goal")
+
+
+@pytest.mark.parametrize("status", ["empty", "unavailable", "not_found", "invalid_arguments"])
+async def test_chat_receives_explicit_lookup_status_without_fallback(tmp_path, status):
+    from mysoul.domain import ActivityDecision
+    from mysoul.memory import MemoryUnavailable
+
+    class Model:
+        calls = 0
+
+        async def decide(self, context, limits):
+            self.calls += 1
+            if self.calls == 1:
+                return ActivityDecision(
+                    activity="rest",
+                    memory_call={
+                        "tool": "memory_search" if status == "empty" else "memory_get",
+                        "arguments": (
+                            {"query": "nothing"}
+                            if status == "empty"
+                            else {"ref": "missing", "scope": "owner"}
+                            if status == "invalid_arguments"
+                            else {"ref": "missing"}
+                        ),
+                    },
+                )
+            assert json.loads(context.step_results[-1].text)["status"] == status
+            return ActivityDecision(
+                activity="read_chat", chat_action="reply", reply="暂时无法查证。"
+            )
+
+    class Memory:
+        async def search(self, *args):
+            assert status == "empty"
+            return []
+
+        async def get(self, *args):
+            if status == "unavailable":
+                raise MemoryUnavailable("internal private diagnostic")
+            if status == "not_found":
+                raise KeyError("missing")
+            raise AssertionError("Invalid request must not touch the backend")
+
+    async with SoulService(Settings(data_dir=tmp_path), Model()) as soul:
+        soul.memory = Memory()
+        assert (await soul.owner_message("查阅一个细节"))["text"] == "暂时无法查证。"
+        assert soul.model.calls == 2
+
+
+@pytest.mark.parametrize("mode", ["normal", "focused", "quiet"])
+async def test_third_full_read_preserves_space_for_final_decision(tmp_path, mode):
+    from mysoul.domain import ActivityDecision
+
+    class Model:
+        calls = 0
+
+        async def decide(self, context, limits):
+            self.calls += 1
+            assert len(context.payload()) <= 4096
+            if self.calls <= 3:
+                return ActivityDecision(
+                    activity="rest",
+                    memory_call={
+                        "tool": "memory_get",
+                        "arguments": {
+                            "ref": "long" if self.calls == 3 else "short",
+                            "length": 4000,
+                        },
+                    },
+                )
+            return ActivityDecision(
+                activity="read_chat", chat_action="reply", reply="已完成三次查阅"
+            )
+
+    async with SoulService(
+        Settings(data_dir=tmp_path, context_chars=4096, memory_backend="local"), Model()
+    ) as soul:
+        state = soul.store.load_subject()
+        state.mode = mode
+        soul.store.save_transition(state.dispatch_epoch, state)
+        soul.store.add_evidence(Evidence(id="short", text="ok"))
+        soul.store.add_evidence(Evidence(id="long", text="原文" * 20000))
+        result = await soul.owner_message("查三次资料再回答")
+        assert not result.get("error")
+        assert soul.model.calls == 4 and result["text"] == "已完成三次查阅"
+
+
+async def test_readonly_dispatch_deadline_has_a_recoverable_receipt(tmp_path):
+    import asyncio
+    from datetime import timedelta
+
+    from mysoul.domain import Goal, ToolRequest, now
+    from mysoul.effects import EffectDispatcher
+
+    store = StateStore(tmp_path / "state.sqlite")
+    store.load_subject()
+    goal = Goal(id="read", objective="read", status="active")
+    store.save_goal(goal)
+    dispatcher = EffectDispatcher(store)
+
+    async def blocked(request):
+        await asyncio.Event().wait()
+
+    dispatcher.register("memory_search", blocked)
+    receipt = await dispatcher.dispatch(
+        ToolRequest(
+            action_id="lookup",
+            activity_id="a",
+            goal_id=goal.id,
+            epoch=0,
+            tool="memory_search",
+            deadline=now() + timedelta(seconds=0.02),
+        )
+    )
+    assert receipt.outcome == "confirmed"
+    assert json.loads(receipt.content)["status"] == "timeout"
+    store.close()
+
+
+async def test_cancelled_worker_lookup_can_resume_without_reconciliation(tmp_path):
+    import asyncio
+
+    from mysoul.domain import Goal, StepDecision
+    from mysoul.model import ReplayModel
+
+    entered = asyncio.Event()
+
+    class Memory:
+        async def search(self, *args):
+            entered.set()
+            await asyncio.Event().wait()
+
+    async with SoulService(
+        Settings(data_dir=tmp_path),
+        ReplayModel(
+            [
+                StepDecision(tool="memory_search", arguments={"query": "old"}),
+                StepDecision(done=True),
+            ]
+        ),
+    ) as soul:
+        soul.memory = Memory()
+        task = asyncio.create_task(soul.start_goal(Goal(objective="read history")))
+        await asyncio.wait_for(entered.wait(), 1)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        activity = soul.store.all("activity")[0]
+        receipts = soul.store.effects_for_goal(activity["goal_id"])
+        assert receipts[0][1].outcome == "confirmed"
+        assert json.loads(receipts[0][1].content)["status"] == "interrupted"
+        resumed = await soul.executor.resume(activity["id"], "continue")
+        assert resumed.status == "completed"
+
+
+def test_restart_recovers_unfinished_memory_reads_without_changing_external_effects(tmp_path):
+    from mysoul.domain import ToolRequest, ToolResult, now
+
+    path = tmp_path / "state.sqlite"
+    store = StateStore(path)
+    store.load_subject()
+    with store.transaction() as db:
+        for name in ["memory_search", "qq_send"]:
+            request = ToolRequest(
+                action_id=name, activity_id="a", goal_id="g", epoch=0, tool=name, deadline=now()
+            )
+            receipt = ToolResult(action_id=name, outcome="in_flight")
+            db.execute(
+                "INSERT INTO effects VALUES(?,?,?)",
+                (name, request.model_dump_json(), receipt.model_dump_json()),
+            )
+    store.close()
+    store = StateStore(path)
+    store.recover_effects()
+    assert store.effect("memory_search").outcome == "confirmed"
+    assert json.loads(store.effect("memory_search").content)["status"] == "interrupted"
+    assert store.effect("qq_send").outcome == "unknown"
+    store.close()

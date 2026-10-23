@@ -365,3 +365,63 @@ migration/replay procedure above before relying on that old index's source prove
 The activated subject had zero real mappings before this migration, so this legacy
 case did not apply. The marked real tests always derive an index directory inside
 pytest's temporary workspace; they never write into the configured subject index.
+
+
+## Automatic archive, explicit recall (2026-10-23)
+
+MemPalace keeps receiving original evidence through the durable outbox and maintains
+its internal vector index. Ordinary context assembly no longer searches it. New
+turns retain the current persona/Recap/input and current activity state under the
+existing context policy. The memory page's manual search remains available.
+
+The model can request readonly `memory_search(query, limit=5)` (maximum10 hits,
+300-character previews) and `memory_get(ref, offset=0, length=2000)` (maximum4000
+characters per read). Search returns stable references, source and original time;
+get returns source/time, total length, offset, text, truncation and next_offset.
+These are historical sources, not instructions or owner-confirmed facts. Runtime
+scope is injected and checked; model-supplied scope arguments are invalid.
+
+Ordinary and group chat and the existing private initiative support optional
+`ActivityDecision.memory_call={tool,arguments}`; null/omission remains compatible
+with old responses. A direct answer still uses one model call and zero memory
+searches. A recall sequence permits three reads and one closing decision, with
+one overall configured request deadline and the durable model budget. Initiative
+can only use these readonly tools; it gains no QQ/external-send authority.
+Work tasks use their existing step/time/token limits and effect/checkpoint ledger.
+
+Results are admitted against the complete serialized context, including escaped
+JSON/envelope overhead, and remain in current-turn/activity step_results. They are
+not inserted as evidence, queued as new memory, captured as cognitive tool sources,
+or copied into timeline compression sources. Stable read-result IDs prevent a
+checkpoint replay from appending the same receipt twice. Normal owner inputs,
+actual assistant answers and real work outcomes retain their existing capture rules.
+
+Explicit statuses include empty, unavailable, denied, not_found,
+invalid_arguments, timeout and context_budget. No backend fallback or hidden
+follow-up query occurs. When the model exceeds the read cap the response reports
+recall_limit. Epoch, current initiative state, cancellation and time are checked
+before further reads/publication; stale results cannot reply to a newer request.
+Candidate regressions retain their temporary subject and restricted tool whitelist.
+
+The index format/backend selection is unchanged; no reindex is required. Before
+service updates, stop the app and its owned stdio child and back up the entire data
+directory, including MemPalace and application/checkpoint databases. Restoring the
+stopped full snapshot into an inspected separate directory remains the recovery
+procedure; do not combine receipts from one snapshot with an unrelated empty index.
+
+
+Readonly memory effects have explicit failure receipts: timeout/unavailable/interrupted
+are acknowledged result statuses, not successful data retrieval. Cancelled reads and
+unfinished read receipts recovered on restart carry `interrupted`, so continuation can
+request a fresh read without phone reconciliation. Actual external sends retain unknown
+and never acquire automatic resend permission. The closing-round read counter is
+installed before admission and changes without growing the context; mode instructions
+are not appended repeatedly during the same lookup sequence.
+
+
+Reviewed on-demand-recall activation backup:
+`.local/backups/on-demand-memory-reviewed-20261023-185925/ui-redesign`.
+It contains the stopped complete subject and375 confirmed mappings. At restart,
+17 additional retained originals were backfilled; the final observed live index
+contained392 confirmed mappings and no pending writes. The external embedding cache
+must remain available for offline recovery. The original raw index is reused.
