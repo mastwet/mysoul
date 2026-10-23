@@ -472,3 +472,57 @@ Review rulings retained after scratch-ledger cleanup:
   budgets and three-minute initiative intact. Final280 Python passed/8 external skips,
   34 UI passed, clean Ruff, JS syntax, offline build and whitespace checks. No new
   external release-gate certification is implied.
+
+
+### Full upstream MemPalace activation (2026-10-23)
+
+- Installed clean full upstream commit `f41e8e75ddaadf5588d5127715fa531d79eadb45`
+  (3.12.0) in a separate Python3.12.12 environment; Chroma1.5.9,
+  ONNX Runtime1.31.0 and `embeddinggemma` q8,384 dimensions. Exact observed
+  dependency versions are recorded in `integrations/mempalace/runtime-dependencies.lock`.
+  Public model warmup returned384 dimensions in33.06s. Actual private indexing uses
+  cached weights with HF offline enabled, CPU/two threads and telemetry disabled.
+- Real full-engine tests: **2 passed,4 deselected in14.91s**. Chinese original
+  write/search/get survives a fresh stdio process; semantic paraphrase without exact
+  bird name finds the toucan fixture; equal text under distinct source IDs keeps
+  distinct drawer receipts; chunk hits deduplicate; owner records are unavailable
+  to group get/search. These ran against a separate disposable index, not owner chat.
+- Regression first reproduced loss of identical-text provenance, upstream chunk
+  duplication and missing legacy local-delivery migration. Stable per-source rooms,
+  authoritative source_path, returned evidence deduplication and startup backfill
+  fix these. Confirmed remote receipts are not requeued on restart. Health records
+  actual successful/failed MCP operations; it is no longer inferred from a setting.
+- Port8767 was fully backed up while stopped, activated through persistent local
+  configuration, and restarted normally. Initial235 pending records completed;
+  another123 previously local-delivered originals were identified and automatically
+  requeued by the added migration. Final actual status: **358 confirmed mappings,
+  0 pending**, connected. No synthetic fixture was inserted into owner chat/index.
+- Browser actual Chinese query “巨嘴鸟的嘴为什么很轻又能散热” found the prior
+  complete assistant original as the first result. After actual server restart, the
+  paraphrase “那种大嘴巴的热带鸟，为什么嘴又轻又能调节体温” also found
+  that retained original without naming the bird. Short/long switching works through
+  the narrow-screen sidebar and keeps chat drafts. The standalone real restart tests
+  and actual server restart both retained the existing source mappings/index.
+- Existing independent limitation observed before activation: the owner's last chat
+  had `context_budget`; hierarchical compression had failed7 times with an invalid
+  provider structure and retained its plan/backoff. A successful MemPalace lookup
+  does not prove the chat generation/compression path has recovered. This work does
+  not claim that provider-context issue fixed or perform an additional private replay.
+- Final isolated feature snapshot: **290 Python passed,9 skipped in47.77s**;
+  **36 UI passed**. Ruff and JavaScript syntax passed. Of the9 default external
+  skips, the2 MemPalace cases also passed separately against the real engine;
+  the remaining7 skips are not passed gates. Provider, QQ and code isolation remain
+  independent acceptance items. Offline source/wheel build and whitespace checks
+  passed on the scoped feature.
+
+- One independent read-only review found one Important test-isolation issue and two
+  minor health/legacy-provenance concerns. Both real tests now force temporary
+  engine directories, proven RED/GREEN; invalid receipts and changed remote content
+  report unavailable, also RED/GREEN. No pre-activation real mappings existed in the
+  actual subject; upgrades from older shared-room real indexes require explicit
+  migration/replay (documented limitation, not silently rewritten receipts).
+- Concurrent work from another desktop conversation changed the same checkout's
+  context/autonomy policy during acceptance. Those changes are outside this feature
+  and preserved. The final MemPalace regression runs use an isolated snapshot of
+  base `a3fca93` plus only this feature's changes. The commit stages only the three
+  MemPalace service hunks; it does not include the concurrent context changes.

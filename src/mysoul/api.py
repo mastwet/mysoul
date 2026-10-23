@@ -16,6 +16,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from mysoul.config import Settings
 from mysoul.domain import Contract, Goal, now
 from mysoul.evolution import RegressionCase
+from mysoul.memory import MemoryUnavailable
 from mysoul.model_settings import ModelUpdate
 from mysoul.persona import PersonaSections
 from mysoul.service import SoulService
@@ -165,6 +166,12 @@ def create_app(settings: Settings | None = None, *, token=None, service=None):
     @app.exception_handler(PermissionError)
     async def permission_handler(request, exc):
         return JSONResponse({"detail": "Operation outside authorized scope"}, status_code=403)
+
+    @app.exception_handler(MemoryUnavailable)
+    async def memory_handler(request, exc):
+        return JSONResponse(
+            {"detail": "长期记忆服务暂不可用，本地记录已保留，请稍后重试。"}, status_code=503
+        )
 
     @app.exception_handler(KeyError)
     async def missing_handler(request, exc):

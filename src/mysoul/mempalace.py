@@ -11,7 +11,7 @@ from jsonschema import validate
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
-from mysoul.domain import Contract, Evidence, Scope
+from mysoul.domain import Contract, Evidence, Scope, now
 from mysoul.memory import MemoryUnavailable
 
 INSPECTED_REVISION = "f41e8e75ddaadf5588d5127715fa531d79eadb45"
@@ -24,6 +24,18 @@ class MCPMemory:
         if not self.required.issubset(schemas):
             raise ValueError("MemPalace MCP tool schema missing required capabilities")
         self.store, self.session, self.schemas = store, session, schemas
+        self._health = {"state": "connected", "last_success_at": now().isoformat(), "error": ""}
+        # Local/fixture delivery is not a confirmed MemPalace receipt. Backfill
+        # retained originals once, while leaving confirmed remote mappings intact.
+        with store.transaction() as db:
+            db.execute("INSERT OR IGNORE INTO memory_queue(id) SELECT id FROM evidence")
+            db.execute(
+                "UPDATE memory_queue SET status='pending',remote_ref=NULL WHERE NOT EXISTS "
+                "(SELECT 1 FROM objects WHERE kind='memory_ref' AND id=memory_queue.id)"
+            )
+
+    def health(self):
+        return dict(self._health)
 
     @staticmethod
     def wing(scope: Scope):
@@ -44,10 +56,13 @@ class MCPMemory:
                 data = json.loads("\n".join(c.text for c in response.content if c.type == "text"))
             if "error" in data or data.get("success") is False:
                 raise MemoryUnavailable("MemPalace operation failed")
+            self._health = {"state": "connected", "last_success_at": now().isoformat(), "error": ""}
             return data
         except MemoryUnavailable:
+            self._health.update(state="unavailable", error="MemPalace operation failed")
             raise
         except Exception as exc:
+            self._health.update(state="unavailable", error=type(exc).__name__)
             raise MemoryUnavailable("MemPalace unavailable; local evidence retained") from exc
 
     async def add(self, evidence: Evidence) -> str:
@@ -56,14 +71,17 @@ class MCPMemory:
             "mempalace_add_drawer",
             {
                 "wing": self.wing(evidence.scope),
-                "room": "evidence",
+                # Upstream deduplicates by wing+room+content. A stable room per
+                # source retains distinct provenance for repeated identical words.
+                "room": "evidence-" + sha256(evidence.id.encode()).hexdigest()[:24],
                 "content": evidence.text,
                 "source_file": f"mysoul:{evidence.id}",
                 "added_by": "mysoul",
             },
         )
         ref = data.get("drawer_id")
-        if not isinstance(ref, str):
+        if not isinstance(ref, str) or not ref:
+            self._health.update(state="unavailable", error="Invalid drawer receipt")
             raise MemoryUnavailable("MemPalace returned no drawer ID")
         self.store.put("memory_ref", evidence.id, {"remote": ref})
         return ref
@@ -75,19 +93,20 @@ class MCPMemory:
                 "query": query[:250] or "recent",
                 "limit": max(1, min(limit, 100)),
                 "wing": self.wing(scope),
-                "room": "evidence",
             },
         )
         hits = []
+        seen = set()
         for item in data.get("results", []):
-            source = item.get("source_file", "")
+            source = item.get("source_path") or item.get("source_file", "")
             if not source.startswith("mysoul:"):
                 continue
             try:
                 evidence = self.store.evidence(source.removeprefix("mysoul:"))
             except KeyError:
                 continue
-            if evidence.permitted(scope):
+            if evidence.permitted(scope) and evidence.id not in seen:
+                seen.add(evidence.id)
                 # Return the original retained evidence, not an untrusted replacement scope.
                 hits.append(evidence)
         return hits[:limit]
@@ -101,6 +120,7 @@ class MCPMemory:
             raise MemoryUnavailable("Evidence not yet delivered to MemPalace")
         data = await self.call("mempalace_get_drawer", {"drawer_id": mapping["remote"]})
         if data.get("content", data.get("text")) != evidence.text:
+            self._health.update(state="unavailable", error="Remote content mismatch")
             raise MemoryUnavailable("Remote drawer differs from retained source; review required")
         return evidence
 

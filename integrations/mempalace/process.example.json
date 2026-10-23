@@ -1,0 +1,21 @@
+{
+  "command": "C:/path/to/mysoul/.local/mempalace-venv/Scripts/python.exe",
+  "args": [
+    "-m",
+    "mempalace.mcp_server"
+  ],
+  "source_dir": "C:/path/to/mysoul/.local/upstream-mempalace",
+  "revision": "f41e8e75ddaadf5588d5127715fa531d79eadb45",
+  "data_dir": "C:/path/to/mysoul/.local/subject/mempalace",
+  "embedding_model": "embeddinggemma",
+  "env": {
+    "HF_HOME": "C:/path/to/mysoul/.local/mempalace-model-cache",
+    "HF_HUB_DISABLE_TELEMETRY": "1",
+    "ANONYMIZED_TELEMETRY": "False",
+    "PYTHONUTF8": "1",
+    "PYTHONIOENCODING": "utf-8",
+    "MEMPALACE_EMBEDDING_DEVICE": "cpu",
+    "MEMPALACE_EMBEDDING_THREADS": "2",
+    "HF_HUB_OFFLINE": "1"
+  }
+}

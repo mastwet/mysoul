@@ -1,7 +1,7 @@
 """One application service shared by replay, phone ingestion and the local API."""
 
 from mysoul.admission import admitted
-from mysoul.config import Settings
+from mysoul.config import Settings, apply_saved_memory
 from mysoul.domain import (
     Activity,
     ContextBudget,
@@ -33,6 +33,7 @@ from mysoul.tools.news import NewsReader
 
 class SoulService:
     def __init__(self, settings: Settings, model=None, phone=None):
+        apply_saved_memory(settings)
         self.settings = settings
         self.store = StateStore(settings.data_dir / "state.sqlite")
         self.store.load_subject()
@@ -887,15 +888,23 @@ class SoulService:
             pending = self.store.db.execute(
                 "SELECT COUNT(*) FROM memory_queue WHERE status='pending'"
             ).fetchone()[0]
+            delivered = self.store.db.execute(
+                "SELECT COUNT(*) FROM objects WHERE kind='memory_ref'"
+            ).fetchone()[0]
+        configured = self.settings.memory_backend == "mempalace"
+        inspect_health = getattr(self.memory, "health", None)
+        health = inspect_health() if configured and inspect_health else {"state": "not_configured"}
+        long_term = {"backend": "mempalace", "delivered": delivered, "pending": pending, **health}
+        if configured and self.memory_process:
+            config = self.memory_process.config
+            long_term.update(revision=config.revision, embedding_model=config.embedding_model)
         return {
             "backend": self.settings.memory_backend,
-            "method": "local lexical"
-            if self.settings.memory_backend == "local"
-            else self.settings.memory_backend,
+            "method": "local lexical" if not configured else "local semantic",
             "evidence_count": evidence_count,
             "pending_mempalace_sync": pending,
-            "mempalace": "connected"
-            if self.settings.memory_backend == "mempalace"
-            else "not configured",
+            "mempalace": health["state"] if configured else "not configured",
+            "short_term": {"recap_version": self.recap.current().version},
+            "long_term": long_term,
             "last_context": getattr(self, "context_metrics", None),
         }

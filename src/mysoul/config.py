@@ -63,3 +63,28 @@ class Settings(Contract):
         if self.send_enabled and (not self.owner_id or not self.allowed_groups):
             raise ValueError("Sending requires owner identity and an explicit group allowlist")
         return self
+
+
+class MemorySelection(Contract):
+    backend: Literal["local", "mempalace"]
+    process_config: Path | None = None
+
+    @model_validator(mode="after")
+    def process_required(self):
+        if self.backend == "mempalace" and self.process_config is None:
+            raise ValueError("MemPalace requires a local process configuration")
+        return self
+
+
+def apply_saved_memory(settings):
+    # Explicit environment/constructor settings remain the recovery override.
+    if {"memory_backend", "mempalace_config"} & settings.model_fields_set:
+        return
+    path = settings.data_dir / "memory.settings.json"
+    if not path.exists():
+        return
+    saved = MemorySelection.model_validate_json(path.read_text(encoding="utf-8"))
+    settings.memory_backend = saved.backend
+    if saved.process_config:
+        value = saved.process_config
+        settings.mempalace_config = value if value.is_absolute() else path.parent / value

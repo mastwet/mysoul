@@ -495,13 +495,26 @@ $("organize-now").addEventListener("click",()=>busy($("organize-now"),async()=>{
 }));
 $("persona-auto-toggle").addEventListener("click",()=>busy($("persona-auto-toggle"),()=>api("cognition/policy",cognitionPolicyBody({persona_enabled:!snapshot.cognition.policy.persona_enabled}))));
 
+for(const name of ["short","long"]){
+ $(`memory-tab-${name}`).addEventListener("click",()=>{
+  for(const other of ["short","long"]){
+   const active=other===name;$(`${other}-term-memory`).hidden=!active;
+   $(`memory-tab-${other}`).classList.toggle("active",active);
+   $(`memory-tab-${other}`).setAttribute("aria-pressed",String(active));
+  }
+ });
+}
 function renderMemoryStatus() {
   if(!snapshot?.memory)return;
   const memory=snapshot.memory,last=memory.last_context;
+  const long=memory.long_term||{state:memory.backend==="mempalace"?memory.mempalace:"not_configured",delivered:0,pending:memory.pending_mempalace_sync};
+  const label={connected:"已连接 · 本机语义检索",unavailable:"服务异常 · 本地记录已保留",not_configured:"尚未接入 · 记录保留在本地待写队列"}[long.state]||"正在连接";
+  $("long-term-status").textContent=`${label}。已同步 ${(long.delivered||0).toLocaleString()} 条，待同步 ${(long.pending||0).toLocaleString()} 条。${long.embedding_model?` 嵌入模型：${long.embedding_model}。`:""}`;
+  $("long-term-status").classList.toggle("memory-error",long.state==="unavailable");
   const names={local:"本机关键词检索",fixture:"离线回放记忆",mempalace:"MemPalace"};
   $("memory-backend").textContent=names[memory.backend]||memory.backend;
   const context=last?`最近一次组装 ${last.payload_chars.toLocaleString()} / ${last.budget_chars.toLocaleString()} 字符上下文，含 ${last.history_messages} 条对话消息、${last.memory_results} 条记忆证据。`:"还没有模型上下文记录。";
-  const engine=memory.backend==="local"?"本机按关键词匹配，可在这里查找旧记录；语义记忆服务尚未接入。":memory.backend==="mempalace"?"MemPalace 已配置；状态以实际检索结果为准。":"使用确定性离线记忆夹具。";
+  const engine=memory.backend==="local"?"本机按关键词匹配，可在这里查找旧记录；语义记忆服务尚未接入。":memory.backend==="mempalace"?"使用 MemPalace 本机向量索引检索历史原文。":"使用确定性离线记忆夹具。";
   const queue=memory.mempalace==="not configured"
     ?`MemPalace 未接入，${memory.pending_mempalace_sync.toLocaleString()} 条记录保存在本地队列。`
     :`还有 ${memory.pending_mempalace_sync.toLocaleString()} 条记录待同步。`;

@@ -1531,3 +1531,7 @@ dialog::backdrop {
 @media(max-width:600px){.persona-diff{grid-template-columns:minmax(0,1fr)}.maintenance-controls{align-items:start}.maintenance-run summary .muted{display:block}}
 
 .history-controls{max-width:760px;margin:0 auto;text-align:center;padding:12px 20px 0}.history-controls p:empty{display:none}.timeline-task{border:1px solid var(--border);border-radius:16px;padding:20px;margin:24px 0;overflow-wrap:anywhere}.timeline-task .section-heading{gap:16px}.timeline-task .message-body{margin-top:14px}.timeline-task .actions{margin-top:12px}
+
+.memory-area{margin-bottom:32px}.memory-area>.section-heading{margin-bottom:4px}.memory-area>.muted{margin:0 0 16px}.memory-error{color:var(--error)}
+
+.memory-switch{display:flex;gap:24px;border-bottom:1px solid var(--line);margin:0 0 24px}.memory-switch button{padding:10px 0;border:0;border-bottom:2px solid transparent;border-radius:0;background:transparent;color:var(--muted)}.memory-switch button.active{border-bottom-color:var(--text);color:var(--text);font-weight:600}

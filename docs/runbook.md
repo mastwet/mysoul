@@ -115,7 +115,7 @@ Each gate remains independent. Configuration or a skipped test is not validation
 | Code execution | Disabled. No isolation backend is implemented. Skipped isolation tests cannot enable execution. |
 | News | Set comma-separated exact HTTPS `MYSOUL_NEWS_SOURCES` to expose the allowlisted `read_news` tool. Fetched text remains untrusted public evidence. No source is enabled by default. |
 
-The inspected MemPalace source revision is `f41e8e75ddaadf5588d5127715fa531d79eadb45`; it has not passed this project's real-engine gate. Its full Python engine declares Chroma and multilingual embedding dependencies. `embeddinggemma` is an upstream multilingual option; confirm available memory/disk and model download/privacy requirements before use. Record the actual revision/model and results after validation.
+The full MemPalace source revision `f41e8e75ddaadf5588d5127715fa531d79eadb45` passed the real Chinese write/search/get/restart gate on 2026-10-23. The tested CPU runtime uses upstream 3.12.0, Chroma 1.5.9 and multilingual `embeddinggemma` (q8 ONNX, 384 dimensions). See the dated validation entry for exact scope; this does not certify QQ or code isolation.
 
 Example process configuration (local absolute paths must be supplied):
 
@@ -289,3 +289,79 @@ of consolidation. Original evidence retains full timestamp precision and provena
 Existing Recap reformatting creates a version and must not advance pending coverage;
 it uses the configured provider only with authorization for that private data and
 its destination. The second-only display cleanup can run locally without inference.
+
+
+## MemPalace local deployment and recovery (2026-10-23)
+
+The memory page has **短期记忆** (versioned Recap, automatic organization and
+local hierarchical history) and **长期记忆** (full upstream MemPalace semantic
+retrieval of original evidence). Recap remains concise; the index retains original
+text with source identity and audience isolation. Model context still follows the
+same budget/permissions contract; a working index does not resolve a failed
+hierarchical compression run or make model context unlimited.
+
+Use a separate Python 3.12 environment for the full engine. The checked-in
+`integrations/mempalace/runtime-dependencies.lock` records the tested Windows CPU
+dependencies; mysoul's `uv.lock` remains independent. After cloning the official
+repository and checking out the pinned revision above:
+
+```powershell
+uv venv --python 3.12 .local/mempalace-venv
+uv pip install --python .local/mempalace-venv/Scripts/python.exe -r integrations/mempalace/runtime-dependencies.lock
+uv pip install --python .local/mempalace-venv/Scripts/python.exe --no-deps .local/upstream-mempalace
+```
+
+Customize `integrations/mempalace/process.example.json` with absolute paths. Download
+and warm the public embedding weights once, before admitting private originals.
+The observed cache snapshot for `onnx-community/embeddinggemma-300m-ONNX` is
+`5090578d9565bb06545b4552f76e6bc2c93e4a66`; retain this cache for reproduction.
+A public-only warmup can omit `HF_HUB_OFFLINE` and call
+`get_embedding_function(model="embeddinggemma")(["中文公共检索测试"])` from
+`mempalace.embedding`. Then set `HF_HUB_OFFLINE=1`, disable telemetry as in the
+example, and use that same cache. Actual memory embedding/search runs locally on
+CPU (two threads); no external embedding API is configured.
+
+For restart-persistent selection, put `memory.settings.json` in the subject data
+directory alongside a customized `mempalace.process.json`:
+
+```json
+{"backend":"mempalace","process_config":"mempalace.process.json"}
+```
+
+Explicit `MYSOUL_MEMORY_BACKEND` / `MYSOUL_MEMPALACE_CONFIG` settings override this
+file. The replay command remains explicitly offline. First real connection queues
+all originals without a confirmed MemPalace mapping, including records previously
+marked delivered by a local fixture. Subsequent starts preserve confirmed receipts;
+retries use a stable source room to avoid duplicate or merged provenance.
+
+`/api/status` exposes `memory.long_term`: actual protocol/operation health,
+last successful operation, confirmed mappings, pending outbox count and model/source
+revision. Connection health is an observation, not a fresh active probe or a release
+gate receipt. A runtime failure returns HTTP503 for explicit search; local originals
+and pending writes remain intact. If startup cannot establish the engine, inspect
+its local configuration and restart with an explicit `MYSOUL_MEMORY_BACKEND=local`
+for lexical-only recovery. Remove that override to restore semantic memory.
+
+The actual test subject on port8767 uses `.local/ui-redesign/mempalace` and the
+separate `.local/mempalace-venv` / `.local/mempalace-model-cache`. Before restoration,
+stop the application and its owned stdio child, then copy the entire subject data
+directory (including MemPalace palace/config/index identity, SQLite files and
+receipts). Do not run two engines against the same index, replace just one database,
+or point existing remote mappings at a new empty index. A new index requires an
+explicit migration/replay preserving the old full directory until verified.
+
+Activation backup: `.local/backups/before-mempalace-20261023-173815/ui-redesign`.
+First synchronized-index backup:
+`.local/backups/mempalace-first-sync-20261023-174811/ui-redesign` (235 remote
+mappings; the subsequently discovered 123 legacy local-only records are requeued
+at the next startup). Both are stopped full-directory snapshots. Public model
+weights live outside them and must also be retained for offline recovery.
+
+
+When upgrading an older shared-room adapter that already has real remote receipts,
+identical originals may share one legacy drawer. This release prevents new collisions
+but does not automatically rewrite confirmed old mappings; use the explicit full-index
+migration/replay procedure above before relying on that old index's source provenance.
+The activated subject had zero real mappings before this migration, so this legacy
+case did not apply. The marked real tests always derive an index directory inside
+pytest's temporary workspace; they never write into the configured subject index.

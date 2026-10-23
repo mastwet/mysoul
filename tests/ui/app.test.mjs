@@ -523,3 +523,27 @@ test("delayed older page anchors only prepend growth and preserves intervening s
   assert.equal(scroller.scrollTop,500);
  }finally{if(release)release();ui.close();}
 });
+
+test("memory separates short-term Recap from real long-term MemPalace status",async()=>{
+ const ui=await fixture();try{
+  ui.server.memory.long_term={backend:'mempalace',state:'unavailable',delivered:12,pending:3,error:'Memory unavailable'};
+  ui.document.querySelector('[data-view="memory"]').click();
+  await until(()=>ui.document.getElementById('memory-status').textContent.includes('已保存'));
+  assert.equal(ui.document.querySelector('#short-term-memory #recap-view')?.id,'recap-view');
+  assert.ok(ui.document.querySelector('#long-term-memory #memory-search-form'));
+  assert.match(ui.document.getElementById('long-term-status').textContent,/异常/);
+  assert.match(ui.document.getElementById('long-term-status').textContent,/12/);
+  assert.equal(ui.document.getElementById('long-term-status').textContent.includes('已连接'),false);
+ }finally{ui.close();}
+});
+
+test("short and long memory tabs preserve the chat draft and show the chosen panel",async()=>{
+ const ui=await fixture();try{
+  ui.textarea.value='仍然保留的聊天草稿';ui.document.querySelector('[data-view="memory"]').click();
+  const tab=ui.document.getElementById('memory-tab-long');assert.ok(tab);tab.click();
+  assert.equal(ui.document.getElementById('short-term-memory').hidden,true);
+  assert.equal(ui.document.getElementById('long-term-memory').hidden,false);
+  ui.document.getElementById('memory-tab-short').click();assert.equal(ui.document.getElementById('short-term-memory').hidden,false);
+  assert.equal(ui.textarea.value,'仍然保留的聊天草稿');await new Promise(r=>setTimeout(r,30));
+ }finally{ui.close();}
+});
