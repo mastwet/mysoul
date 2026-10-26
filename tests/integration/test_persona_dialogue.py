@@ -63,8 +63,9 @@ async def test_dialogue_and_assistant_evidence_survive_restart_and_are_scoped(tm
     async with SoulService(Settings(data_dir=tmp_path), model=model) as soul:
         await soul.owner_message("Continue that story.")
         history = model.contexts[-1].history
-        assert [m.role for m in history[-2:]] == ["user", "assistant"]
-        assert history[-1].content == "The silver clock sang."
+        assert not history
+        saved_history = soul.dialogue_history(Scope())
+        assert saved_history[0][-1].content == "The silver clock sang."
         group = await soul.context(Scope(audience="group", conversation="g"), "hello")
         assert not group.history
         assert "silver clock" not in group.payload().lower()

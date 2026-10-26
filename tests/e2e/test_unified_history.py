@@ -79,7 +79,8 @@ async def test_unified_chat_archives_restart_and_original_expansion(tmp_path):
         assert [i.id for i in TimelineStore(soul.store).page(limit=100).items] == ids
         assert soul.store.goal("cancelled").cancelled
         context = await soul.context(Scope(), "Continue")
-        assert "VERIFIED_RESULT" in context.payload()
+        assert "VERIFIED_RESULT" not in context.payload()
+        assert not context.history and not context.archives
         archive = next(n for n in soul.compression.archives.frontier(Scope()) if n.level == 2)
         page = soul.compression.archives.expand(archive.id, Scope(), limit=100)
         assert [i["seq"] for i in page["items"]] == list(

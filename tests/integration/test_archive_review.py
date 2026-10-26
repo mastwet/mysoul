@@ -44,7 +44,8 @@ async def test_archived_chat_is_not_reinjected_after_many_tasks(tmp_path):
         run = await soul.compression.run_due(force=True)
         assert run.status == "completed"
         context = await soul.context(Scope())
-        assert "ARCHIVED_CHAT_PERIOD" in context.payload()
+        assert "ARCHIVED_CHAT_PERIOD" not in context.payload()
+        assert not context.archives
         assert not context.history
 
 
@@ -61,7 +62,7 @@ async def test_fixed_recap_and_serialization_trigger_early_compression(tmp_path)
         assert run.status == "completed"
 
 
-async def test_restarted_unfinished_input_remains_explicit_context(tmp_path):
+async def test_restarted_unfinished_input_is_retained_without_automatic_injection(tmp_path):
     settings = Settings(data_dir=tmp_path)
     async with SoulService(settings, ReplayModel()) as soul:
         soul.store.add_event(
@@ -75,11 +76,9 @@ async def test_restarted_unfinished_input_remains_explicit_context(tmp_path):
         )
     async with SoulService(settings, ReplayModel()) as soul:
         context = await soul.context(Scope(), "new input")
-        assert "UNFINISHED_ORCHID_REQUEST" in context.payload()
-        assert any(
-            "pending" in item.text and "UNFINISHED_ORCHID_REQUEST" in item.text
-            for item in context.archives
-        )
+        assert "UNFINISHED_ORCHID_REQUEST" not in context.payload()
+        assert not context.archives
+        assert soul.store.events()[0].content == "UNFINISHED_ORCHID_REQUEST"
 
 
 async def test_query_can_recover_original_detail_omitted_by_summary(tmp_path):
@@ -109,12 +108,14 @@ async def test_query_can_recover_original_detail_omitted_by_summary(tmp_path):
         soul.compression.set_policy(CompressionPolicy(raw_trigger=10, raw_batch=4))
         run = await soul.compression.run_due(force=True)
         context = await soul.context(Scope(), "What was Project Orchid reference code?")
-        assert "BLUE-739" in context.payload()
+        assert "BLUE-739" not in context.payload()
+        found = await soul.memory_tools.call("memory_search", {"query": "Project Orchid"}, Scope())
+        assert any(item["ref"] == event.id for item in found["items"])
+        original = await soul.memory_tools.call("memory_get", {"ref": event.id}, Scope())
+        assert "BLUE-739" in original["text"]
         assert len(context.payload()) <= soul.settings.context_chars
-        details = [e for e in context.evidence if e.source == "archive-detail"]
-        assert details and "leaf:" in details[0].text and len(details[0].text) < 1000
-        assert (await soul.memory.get(run.node_id, Scope())).text == "Early project discussions"
-        assert any(
+        assert soul.compression.archives.node(run.node_id).text == "Early project discussions"
+        assert not any(
             e.id == run.node_id for e in await soul.memory.search("Early project", Scope(), 10)
         )
         group = await soul.context(Scope(audience="group", conversation="g"), "Project Orchid")

@@ -111,6 +111,31 @@
         <section id="long-term-memory" class="memory-area" aria-labelledby="long-term-title" hidden>
           <div class="section-heading"><h2 id="long-term-title">长期记忆</h2><span class="badge">MemPalace</span></div>
           <p id="long-term-status" class="muted" role="status">读取长期记忆状态…</p>
+        <section id="palace-browser" class="surface" aria-labelledby="palace-title">
+          <div class="section-heading"><h3 id="palace-title">宫殿浏览</h3><button id="palace-refresh" class="secondary small" type="button">刷新结构</button></div>
+          <p id="palace-counts" class="palace-counts"></p>
+          <p id="palace-feedback" class="field-note" role="status"></p>
+          <div id="palace-content" class="palace-layout" hidden>
+            <aside class="palace-navigation" aria-label="宫殿结构">
+              <label for="palace-wing">Wing · 分区</label><select id="palace-wing"></select>
+              <label for="palace-room-filter">Room · 房间</label><input id="palace-room-filter" type="search" placeholder="筛选房间名称或 ID" aria-controls="palace-rooms">
+              <small id="palace-room-count" class="muted"></small><div id="palace-rooms" class="palace-rooms"></div>
+              <p class="field-note">当前 evidence 房间按来源证据划分，尚未按主题整理。</p>
+            </aside>
+            <div class="palace-results">
+              <h4>Drawers · 原文记忆</h4><p id="palace-page-status" class="field-note"></p>
+              <p id="palace-list-feedback" class="field-note" role="status"></p><button id="palace-list-retry" class="secondary small" type="button" hidden>重试读取</button>
+              <div id="palace-list"></div>
+              <div class="palace-pagination"><button id="palace-prev" class="secondary small" type="button" disabled>上一页</button><button id="palace-next" class="secondary small" type="button" disabled>下一页</button></div>
+              <section id="palace-detail" class="palace-detail" hidden aria-labelledby="palace-detail-title">
+                <h4 id="palace-detail-title">原文详情</h4><p id="palace-detail-feedback" class="field-note" role="status"></p><button id="palace-detail-retry" class="secondary small" type="button" hidden>重试原文</button>
+                <div id="palace-detail-body" hidden><pre id="palace-original" class="palace-original"></pre><dl id="palace-metadata" class="palace-fields"></dl><div id="palace-sources"></div><details><summary>存储分块 ID</summary><pre id="palace-chunk-ids" class="palace-original"></pre></details></div>
+              </section>
+            </div>
+          </div>
+          <details id="palace-diagnostic-section" class="disclosure" hidden><summary>索引诊断</summary><dl id="palace-diagnostics" class="palace-fields"></dl><p class="field-note">结构数量按存储分块统计；列表按合并后的逻辑记忆统计。已同步来源数来自 mysoul，可能与原生索引数量不同。</p></details>
+        </section>
+
         <section class="surface"><div class="section-heading"><h3>搜索长期记忆</h3><span id="memory-backend" class="badge"></span></div><p id="memory-status" class="field-note"></p><form id="memory-search-form" class="goal-form"><label class="sr-only" for="memory-query">搜索记忆</label><input id="memory-query" type="search" maxlength="1000" placeholder="描述想找回的经历，支持关键词或自然语言" required><div class="form-actions"><button class="primary" type="submit">搜索</button></div></form><div id="memory-search-results"></div></section>
         </section>
         <details class="surface disclosure"><summary>本地来源证据</summary><div id="evidence"></div></details>

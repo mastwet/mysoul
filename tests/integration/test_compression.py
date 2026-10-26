@@ -32,7 +32,7 @@ async def test_empty_archive_work_makes_no_call(tmp_path):
         assert soul.model.calls == 0
 
 
-async def test_context_contains_nonoverlapping_frontier_and_recent_originals(tmp_path):
+async def test_saved_archives_do_not_become_mandatory_context(tmp_path):
     model = ReplayModel([StepDecision(done=True, note="ARCHIVED_OLD_PERIOD")])
     async with SoulService(Settings(data_dir=tmp_path), model) as soul:
         seed(soul)
@@ -40,11 +40,11 @@ async def test_context_contains_nonoverlapping_frontier_and_recent_originals(tmp
         result = await soul.compression.run_due(force=True)
         assert result.status == "completed"
         context = await soul.context(Scope())
-        assert "ARCHIVED_OLD_PERIOD" in context.payload()
-        assert "original11" in context.payload()
+        assert "ARCHIVED_OLD_PERIOD" not in context.payload()
+        assert not context.history
         assert all("original0 " not in e.text for e in context.evidence)
         assert not any(m.event_id == "event0" for m in context.history)
-        assert context.archives
+        assert not context.archives
         group = await soul.context(Scope(audience="group", conversation="g"))
         assert "ARCHIVED_OLD_PERIOD" not in group.payload()
 
@@ -107,7 +107,7 @@ async def test_restart_reuses_saved_result(tmp_path):
         assert run.status == "completed" and soul.model.calls == 0
 
 
-async def test_recalled_child_is_not_injected_twice(tmp_path):
+async def test_retrieved_original_no_longer_depends_on_local_archive_wrapper(tmp_path):
     async with SoulService(
         Settings(data_dir=tmp_path), ReplayModel([StepDecision(done=True, note="OLD_SUMMARY")])
     ) as soul:
@@ -116,34 +116,33 @@ async def test_recalled_child_is_not_injected_twice(tmp_path):
         soul.store.add_evidence(Evidence(id="event0", text="PRIVATE_OLD_RAW", source="local-owner"))
         await soul.compression.run_due(force=True)
         context = await soul.context(Scope(), "PRIVATE_OLD_RAW")
-        assert "PRIVATE_OLD_RAW" not in str([e.text for e in context.evidence])
+        assert not context.evidence
+        found = await soul.memory_tools.call("memory_search", {"query": "PRIVATE_OLD_RAW"}, Scope())
+        assert [item["ref"] for item in found["items"]] == ["event0"]
         assert not any(s["role"] == "reflection" for s in soul.cognition.status()["sources"])
 
 
-async def test_capacity75_triggers_before_overflow(tmp_path):
+async def test_old_archive_size_no_longer_triggers_model_context_pressure(tmp_path):
     async with SoulService(
         Settings(data_dir=tmp_path), ReplayModel([StepDecision(done=True, note="SMALL")])
     ) as soul:
         seed(soul, count=14, size=4000)
         soul.compression.set_policy(CompressionPolicy(raw_trigger=100, raw_batch=4))
         run = await soul.compression.run_due(force=True)
-        assert run is not None and run.status == "completed"
+        assert run is None
+        assert len((await soul.context(Scope(), "unrelated")).payload()) < 131072 * 0.75
 
 
-async def test_batch_stops_at_low55(tmp_path):
-    async with SoulService(
-        Settings(data_dir=tmp_path),
-        ReplayModel(
-            [StepDecision(done=True, note="FIRST"), StepDecision(done=True, note="SECOND")]
-        ),
-    ) as soul:
-        seed(soul, count=14, size=4000)
-        soul.compression.set_policy(CompressionPolicy(raw_trigger=100, raw_batch=4))
-        first = await soul.compression.run_due(force=True)
-        assert first.status == "completed"
-        second = await soul.compression.run_due(force=True)
-        assert second is not None and second.status == "completed"
-        assert await soul.compression.run_due(force=True) is None
+async def test_idle_does_not_schedule_legacy_compression(tmp_path):
+    async with SoulService(Settings(data_dir=tmp_path), ReplayModel()) as soul:
+        seed(soul, count=100)
+
+        async def forbidden(*args, **kwargs):
+            raise AssertionError("Idle must not run legacy archive compression")
+
+        soul.compression.run_due = forbidden
+        await soul.activities.idle()
+        assert not soul.store.all("compression_run")
 
 
 async def test_invalid_generated_summary_can_be_regenerated(tmp_path):

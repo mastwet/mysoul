@@ -165,9 +165,6 @@ class SoulService:
                     self.settings.mempalace_config, self.store
                 )
                 self.memory = await self.memory_process.__aenter__()
-            from mysoul.archive_memory import ArchiveMemory
-
-            self.memory = ArchiveMemory(self.memory, self.compression.archives)
             await self.executor.open()
         except BaseException:
             self.lease.release()
@@ -286,104 +283,18 @@ class SoulService:
                 pass
 
     def context_assembler(self, scope, task=""):
-        pending = []
-        archived = []
-        covered_refs = set()
-        history = self.dialogue_history(scope)
-        if scope == Scope():
-            from datetime import datetime
-
-            frontier = self.compression.archives.frontier(scope)
-            tail = self.compression.policy().keep_recent
-            raw_ids = {
-                __import__("json").loads(n.text)["source_id"].removeprefix("chat:")
-                for n in frontier
-                if n.level == 0
-            }
-            history = [turn for turn in history if turn[0].event_id in raw_ids]
-            history = history[-tail:] if tail else []
-            history_ids = {m.event_id for turn in history for m in turn}
-            for node in frontier:
-                rows = self.store.db.execute(
-                    "SELECT id,source_id FROM timeline WHERE seq BETWEEN ? AND ?",
-                    (node.first_seq, node.last_seq),
-                ).fetchall()
-                for _ident, source_id in rows:
-                    covered_refs.update(
-                        {
-                            source_id,
-                            "reply:" + source_id,
-                            "experience:" + source_id + ":user",
-                            "experience:" + source_id + ":assistant",
-                            "experience:" + source_id + ":failure",
-                        }
-                    )
-                task_rows = self.store.db.execute(
-                    "SELECT body FROM timeline WHERE kind='task' AND seq BETWEEN ? AND ?",
-                    (node.first_seq, node.last_seq),
-                ).fetchall()
-                import json
-
-                for (task_body,) in task_rows:
-                    task_data = json.loads(task_body)
-                    covered_refs.add(task_data["activity_id"])
-                    covered_refs.update(task_data.get("context_refs", []))
-                    covered_refs.update(
-                        e["evidence_ref"]
-                        for e in task_data.get("effects", [])
-                        if e.get("evidence_ref")
-                    )
-                if node.level == 0:
-                    value = json.loads(node.text)
-                    if value["source_id"].removeprefix("chat:") in history_ids:
-                        continue
-                    if value["body"].get("pending") and value["body"].get("input") == task:
-                        continue
-                if len(node.text) > 131072:
-                    raise ContextOverflow("Required archive source needs background compression")
-                archived.append(
-                    Evidence(
-                        id=node.id,
-                        text=node.text,
-                        scope=scope,
-                        source=f"archive:L{node.level}",
-                        source_scopes=[scope],
-                        created_at=datetime.fromisoformat(node.start_time),
-                    )
-                )
-            for source in self.store.all("cognitive_source"):
-                if (
-                    not source.get("cleared")
-                    and source["covered"] < source["total"]
-                    and source["id"] not in covered_refs
-                    and source["event_id"] not in covered_refs
-                ):
-                    pending.append(self.store.evidence(source["id"]))
-        elif scope.audience == "owner":
-            history = history[-self.cognition.policy().tail_turns :]
+        # Cross-turn continuity belongs to Recap and scoped long-term recall.
+        # Raw dialogue, pending synthesis sources and archive frontiers are not
+        # mandatory model input. The executor owns its current activity context.
         profile = self.persona.current()
         return ContextAssembler(
             self.recap,
             self.memory,
             task=task,
             persona_instructions=profile.instructions(scope),
-            history=history,
-            required_evidence=pending,
-            archive_evidence=archived,
-            covered_refs=covered_refs,
-            required_history=scope.audience == "owner",
         )
 
     async def context(self, scope, task=""):
-        if scope == Scope():
-            self.store.put(
-                "archive_context",
-                "current",
-                {
-                    "epoch": self.store.load_subject().dispatch_epoch,
-                    "task": task,
-                },
-            )
         profile = self.persona.current()
         bundle = await self.context_assembler(scope, task).build(
             scope, ContextBudget(max_chars=self.settings.context_chars)
@@ -642,7 +553,10 @@ class SoulService:
             try:
                 context = await self.context(event.scope, event.content)
             except ContextOverflow:
-                message = "当前对话上下文超过本机设置的字符预算，请提高上下文预算或缩短输入后重试。"
+                message = (
+                    "当前输入、短期记忆 Recap 或本轮执行内容超过本机字符预算，"
+                    "请缩短当前输入、整理 Recap 或调整预算后重试。"
+                )
                 result = {
                     "choice": "owner_served" if event.trust == "owner_command" else "silent",
                     "event_id": event.id,
@@ -762,13 +676,19 @@ class SoulService:
         return result
 
     @admitted("work")
-    async def start_goal(self, goal: Goal, *, expected_epoch=None):
+    async def start_goal(self, goal: Goal, *, expected_epoch=None, current_input=None):
         epoch = (
             self.store.load_subject().dispatch_epoch if expected_epoch is None else expected_epoch
         )
         version = self.skills.active()
+        task = goal.objective
+        if current_input:
+            task = (
+                current_input if current_input.startswith(goal.objective)
+                else goal.objective + "\nCurrent owner input: " + current_input
+            )
         context = await self.context(
-            Scope(), goal.objective + "\nCompletion: " + goal.completion_criteria
+            Scope(), task + "\nCompletion: " + goal.completion_criteria
         )
         goal.skill_version = version.content_hash
         context.skill = version.text

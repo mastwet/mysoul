@@ -198,8 +198,6 @@ class ActivityRouter:
         settled = wake and wake.get("admitted", True) and not expired
         if (not any(ready.values()) or settled) and await self._main_chat_initiative():
             return
-        if (not any(ready.values()) or settled) and await soul.compression.run_due():
-            return
         if (not any(ready.values()) or settled) and await soul.cognition.run_due():
             return
         if not any(ready.values()) or settled:
@@ -227,8 +225,7 @@ class ActivityRouter:
             soul.store.put("wake", signal, {"ready": ready, "admitted": False})
         await self.perform(decision, state.dispatch_epoch, key=signal, feedback=feedback)
         if decision.activity == Activity.REST:
-            if not await soul.compression.run_due():
-                await soul.cognition.run_due()
+            await soul.cognition.run_due()
 
     async def _main_chat_initiative(self):
         """Make at most one bounded, private owner-chat check per persisted interval."""
@@ -506,7 +503,10 @@ class ActivityRouter:
             if goal.cancelled:
                 return
             if goal.status == "pending":
-                await soul.start_goal(goal, expected_epoch=epoch)
+                await soul.start_goal(
+                    goal, expected_epoch=epoch,
+                    current_input=event.content if event is not None else None,
+                )
             elif goal.status == "suspended" and decision.continuation:
                 effects = soul.store.effects_for_goal(goal.id)
                 if decision.continuation != "abandon" and any(

@@ -3,6 +3,7 @@
 import "/vendor/markdown-it.min.js";
 import {createMessageRenderer, shouldSubmitKey} from "/conversation.mjs";
 import {mergeTimeline, prependScrollAnchor} from "/timeline.mjs";
+import {createPalaceBrowser} from "/palace.mjs";
 import {createInnerVoice} from "/inner-voice.mjs";
 
 const renderMarkdown=createMessageRenderer(globalThis.markdownit);
@@ -559,8 +560,10 @@ $("organize-now").addEventListener("click",()=>busy($("organize-now"),async()=>{
 }));
 $("persona-auto-toggle").addEventListener("click",()=>busy($("persona-auto-toggle"),()=>api("cognition/policy",cognitionPolicyBody({persona_enabled:!snapshot.cognition.policy.persona_enabled}))));
 
+const palaceBrowser=createPalaceBrowser({document,api});
 for(const name of ["short","long"]){
  $(`memory-tab-${name}`).addEventListener("click",()=>{
+  if(name==="long")palaceBrowser.open();
   for(const other of ["short","long"]){
    const active=other===name;$(`${other}-term-memory`).hidden=!active;
    $(`memory-tab-${other}`).classList.toggle("active",active);

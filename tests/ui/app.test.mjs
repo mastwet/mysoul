@@ -4,6 +4,7 @@ import {createRequire} from "node:module";
 import test from "node:test";
 import {JSDOM} from "jsdom";
 import {createInnerVoice} from "../../src/mysoul/web/inner-voice.mjs";
+import {createPalaceBrowser} from "../../src/mysoul/web/palace.mjs";
 import {createMessageRenderer,shouldSubmitKey} from "../../src/mysoul/web/conversation.mjs";
 
 import {mergeTimeline,prependScrollAnchor} from "../../src/mysoul/web/timeline.mjs";
@@ -24,6 +25,7 @@ async function fixture(chat,modelRequest,{tokenless=false}={}) {
   server.model={version:0,mode:"replay",url:"",model:"",key_present:false,source:"runtime",output_token_limit:null,token_budget:50000,context_chars:131072,request_timeout:120};
   window.HTMLDialogElement.prototype.showModal=function(){this.open=true;};
   window.HTMLDialogElement.prototype.close=function(){this.open=false;this.dispatchEvent(new window.Event("close"));};
+  window.createPalaceBrowser=createPalaceBrowser;
   window.createInnerVoice=createInnerVoice;
   window.mergeTimeline=mergeTimeline;window.prependScrollAnchor=prependScrollAnchor;window.markdownit=MarkdownIt;window.createMessageRenderer=createMessageRenderer;window.shouldSubmitKey=shouldSubmitKey;
   window.matchMedia=()=>({matches:false,addEventListener(){}});
@@ -64,6 +66,7 @@ async function fixture(chat,modelRequest,{tokenless=false}={}) {
       const body=JSON.parse(options.body);writes.push({path,body});
       server.state={...server.state,...body,next_initiative_at:body.autonomy_enabled?"2026-10-22T12:00:00Z":null};result=server.state;
     }else if(path==="/api/evidence"||path==="/api/recap/history")result=[];
+    else if(path==="/api/memory/palace")result={state:"not_configured"};
     else if(path.startsWith("/api/memory/search?"))result=[];
     else throw new Error(`Unexpected fixture request: ${path}`);
     return {ok:true,status:200,json:async()=>structuredClone(result)};

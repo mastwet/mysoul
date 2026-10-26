@@ -1,0 +1,79 @@
+{
+  "research_date": "2026-10-22",
+  "repository": "https://github.com/MemPalace/mempalace",
+  "tested_commit": "f41e8e75ddaadf5588d5127715fa531d79eadb45",
+  "tested_branch_at_observation": "develop",
+  "source_package_version_field": "3.12.0",
+  "observed_main_commit_not_tested": "602d796c699cabba2971982cd9dccbbf46abfe79",
+  "observed_main_package_version_field": "3.11.0",
+  "environment": {
+    "platform": "Windows",
+    "python": "3.13.12",
+    "chromadb": "1.5.8",
+    "onnxruntime": "1.23.2",
+    "numpy": "2.4.4",
+    "pytest": "9.0.3"
+  },
+  "upstream_tests": {
+    "command": "python -m pytest tests/mcp/test_write_tools.py tests/mcp/test_search.py tests/test_ids.py tests/test_lexical.py tests/test_revisions.py -q --disable-warnings",
+    "exit_code": 0,
+    "passed": 171,
+    "warnings": 1,
+    "seconds": 61.85,
+    "embedding": "Upstream conftest injects a deterministic test embedding for these modules; this suite does not measure semantic quality."
+  },
+  "real_stdio_probe": {
+    "command": "python C:\\Users\\Administrator\\AppData\\Local\\Temp\\mysoul_mempalace_probe_20261022.py",
+    "server": "python -m mempalace.mcp_server --palace <isolated-temp-palace> --backend chroma",
+    "backend": "chroma",
+    "embedding_model": "minilm",
+    "embedding_device": "cpu",
+    "embedding_stub_used": false,
+    "existing_model_cache_used": true,
+    "hf_hub_offline": true,
+    "synthetic_data_only": true,
+    "tool_count": 47,
+    "first_process_exit_code": 0,
+    "first_process_seconds": 4.03,
+    "first_process_response_count": 11,
+    "restart_process_exit_code": 0,
+    "restart_process_seconds": 1.55,
+    "restart_process_response_count": 3,
+    "same_source_retry_reason": "already_exists",
+    "different_source_same_text_reason": "already_exists",
+    "stored_source_after_second_source": "evidence-a.txt",
+    "long_content_characters": 3009,
+    "chunk_size_characters": 800,
+    "physical_chunks": 4,
+    "long_content_exact_roundtrip": true,
+    "restart_short_and_long_content_exact_roundtrip": true,
+    "scoped_chinese_search_returned_stored_text": true,
+    "scoped_chinese_search_similarity": 0.383,
+    "scoped_chinese_search_bm25_score": 0.0,
+    "group_union_search_returned_only_requested_wing_in_probe": true,
+    "full_privacy_boundary_validated": false,
+    "chinese_retrieval_quality_validated": false,
+    "warnings": [
+      "ONNX Runtime did not recognize the Windows Server version as a supported Windows version.",
+      "Embedding dimension probe failed; mempalace_embedder.json recorded model_name=minilm, dimension=0."
+    ],
+    "temporary_raw_evidence_directory": "C:\\Users\\Administrator\\AppData\\Local\\Temp\\mysoul-mempalace-probe-5y7in_lb"
+  },
+  "chinese_lexical_probe": {
+    "query": "茉莉花茶",
+    "documents": ["我喜欢喝茉莉花茶", "我喜欢喝咖啡"],
+    "first_document_tokens": ["我喜欢喝茉莉花茶"],
+    "bm25_scores": [0.0, 0.0],
+    "interpretation": "The shared word-level BM25 scorer does not segment this Chinese sentence; Chroma trigram FTS can still retrieve substring candidates."
+  },
+  "not_validated": [
+    "Target Python 3.12 environment and dependency lock",
+    "Multilingual embeddinggemma model and model revision",
+    "Chinese retrieval quality on a corpus with distractors",
+    "Application adapter and mysoul T04-live gate",
+    "Crash and lost-response reconciliation",
+    "End-to-end group versus private permission isolation",
+    "Large corpus latency, throughput and memory usage",
+    "Backup restoration and embedding migration"
+  ]
+}

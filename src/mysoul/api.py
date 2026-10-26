@@ -216,6 +216,12 @@ def create_app(settings: Settings | None = None, *, token=None, service=None):
             Path(__file__).parent / "web/conversation.mjs", media_type="text/javascript"
         )
 
+    @app.get("/palace.mjs")
+    async def palace_module():
+        return FileResponse(
+            Path(__file__).parent / "web/palace.mjs", media_type="text/javascript"
+        )
+
     @app.get("/inner-voice.mjs")
     async def inner_voice_module():
         return FileResponse(
@@ -237,6 +243,10 @@ def create_app(settings: Settings | None = None, *, token=None, service=None):
     @app.get("/health")
     async def health():
         return {"status": "ok"}
+
+    from mysoul.palace import register_palace_routes
+
+    register_palace_routes(app, authorize)
 
     from mysoul.inner_voice import register_inner_voice_routes
 

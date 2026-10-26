@@ -131,10 +131,8 @@ async def test_initiative_honors_an_unrevoked_owner_followup_request(tmp_path):
             self.contexts.append(context.model_copy(deep=True))
             if "[main-chat initiative]" not in context.task:
                 return ActivityDecision(activity=Activity.REST)
-            has_followup = any(
-                message.role == "user" and "除非我叫停" in message.content
-                for message in context.history
-            )
+            has_followup = "除非我叫停" in context.recap
+            assert not context.history
             if has_followup and "仍然有效的持续请求" in context.instructions:
                 return ActivityDecision(
                     activity=Activity.CHAT,
@@ -166,6 +164,7 @@ async def test_initiative_honors_an_unrevoked_owner_followup_request(tmp_path):
             soul._assistant_evidence(owner_request, prior_reply),
             enqueue=False,
         )
+        soul.recap.publish(0, owner_request.content, [])
         state = soul.store.load_subject()
         state.autonomy_enabled = True
         state.next_initiative_at = now() - timedelta(seconds=1)
